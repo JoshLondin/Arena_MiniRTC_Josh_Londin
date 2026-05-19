@@ -1,4 +1,4 @@
-import { useCallback, useRef } from "react";
+import { useCallback, useMemo, useRef } from "react";
 
 import type { ClientSignalingMessage, Participant, RoomCredentials } from "../types/signaling";
 
@@ -150,14 +150,24 @@ export function useWebRTC({
     await peerConnection.addIceCandidate(candidate);
   }, []);
 
-  return {
-    attachLocalStream,
-    beginNegotiation,
-    cleanupPeerConnection,
-    stopMedia,
-    handleOffer,
-    handleAnswer,
-    handleIceCandidate
-  };
+  return useMemo(
+    () => ({
+      attachLocalStream,
+      beginNegotiation,
+      cleanupPeerConnection,
+      stopMedia,
+      handleOffer,
+      handleAnswer,
+      handleIceCandidate
+    }),
+    [
+      attachLocalStream,
+      beginNegotiation,
+      cleanupPeerConnection,
+      handleAnswer,
+      handleIceCandidate,
+      handleOffer,
+      stopMedia
+    ]
+  );
 }
-

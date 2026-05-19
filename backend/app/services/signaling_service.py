@@ -40,7 +40,7 @@ class SignalingService:
         participant_id: UUID,
         participant_token: str,
     ) -> None:
-        await self.room_service.validate_websocket_credentials(
+        await self.room_service.reconnect_participant(
             session,
             room_code=room_code,
             participant_id=participant_id,

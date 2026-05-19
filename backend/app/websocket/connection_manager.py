@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import suppress
 from uuid import UUID
 
 from fastapi import WebSocket
@@ -18,7 +19,8 @@ class ConnectionManager:
         old_socket = room_connections.get(participant_key)
         room_connections[participant_key] = websocket
         if old_socket is not None and old_socket is not websocket:
-            await old_socket.close(code=WS_CLOSE_DUPLICATE_CONNECTION)
+            with suppress(RuntimeError):
+                await old_socket.close(code=WS_CLOSE_DUPLICATE_CONNECTION)
 
     def disconnect(self, *, room_code: str, participant_id: UUID, websocket: WebSocket) -> bool:
         participant_key = str(participant_id)
@@ -66,4 +68,3 @@ class ConnectionManager:
             await websocket.send_json(message)
             delivered = True
         return delivered
-

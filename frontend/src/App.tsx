@@ -21,6 +21,7 @@ export function App() {
   const [credentials, setCredentials] = useState<RoomCredentials | null>(() =>
     loadCredentials(requestedRoomCode ?? undefined)
   );
+  const [isSessionReady, setIsSessionReady] = useState(false);
   const [state, dispatch] = useReducer(
     roomReducer,
     credentials ?? {
@@ -67,15 +68,34 @@ export function App() {
   const noopSend = useCallback((_message: ClientSignalingMessage) => undefined, []);
   const [sendMessage, setSendMessage] = useState<(message: ClientSignalingMessage) => void>(() => noopSend);
 
+  const handleLocalStream = useCallback((stream: MediaStream | null) => {
+    dispatch({ type: "SET_LOCAL_STREAM", payload: stream });
+  }, []);
+
+  const handleRemoteStream = useCallback((stream: MediaStream | null) => {
+    dispatch({ type: "SET_REMOTE_STREAM", payload: stream });
+  }, []);
+
+  const handlePeerConnectionState = useCallback(
+    (status: "idle" | "connecting" | "connected" | "reconnecting" | "failed") => {
+      dispatch({ type: "SET_CONNECTION_STATUS", payload: status });
+    },
+    []
+  );
+
+  const handleMediaWarning = useCallback((warning: string | null) => {
+    dispatch({ type: "SET_MEDIA_WARNING", payload: warning });
+  }, []);
+
   const webRtc = useWebRTC({
     credentials: credentials ?? state,
     participants: state.participants,
     sendMessage,
     getIceServers,
-    onLocalStream: (stream) => dispatch({ type: "SET_LOCAL_STREAM", payload: stream }),
-    onRemoteStream: (stream) => dispatch({ type: "SET_REMOTE_STREAM", payload: stream }),
-    onConnectionState: (status) => dispatch({ type: "SET_CONNECTION_STATUS", payload: status }),
-    onWarning: (warning) => dispatch({ type: "SET_MEDIA_WARNING", payload: warning })
+    onLocalStream: handleLocalStream,
+    onRemoteStream: handleRemoteStream,
+    onConnectionState: handlePeerConnectionState,
+    onWarning: handleMediaWarning
   });
 
   const onMessage = useCallback(
@@ -101,14 +121,22 @@ export function App() {
     [handleServerMessage, webRtc]
   );
 
+  const handleSocketOpen = useCallback(() => {
+    dispatch({ type: "SET_CONNECTION_STATUS", payload: "connected" });
+  }, []);
+
+  const handleSocketClose = useCallback(() => {
+    dispatch({ type: "SET_CONNECTION_STATUS", payload: "reconnecting" });
+  }, []);
+
   const socket = useWebSocket({
     roomCode: credentials?.roomCode ?? null,
     participantId: credentials?.participantId ?? null,
     participantToken: credentials?.participantToken ?? null,
-    enabled: credentials !== null,
+    enabled: credentials !== null && isSessionReady,
     onMessage,
-    onOpen: () => dispatch({ type: "SET_CONNECTION_STATUS", payload: "connected" }),
-    onClose: () => dispatch({ type: "SET_CONNECTION_STATUS", payload: "reconnecting" })
+    onOpen: handleSocketOpen,
+    onClose: handleSocketClose
   });
 
   useEffect(() => {
@@ -116,6 +144,8 @@ export function App() {
   }, [socket.sendMessage]);
 
   useEffect(() => {
+    let cancelled = false;
+    setIsSessionReady(false);
     if (!credentials) {
       return;
     }
@@ -123,20 +153,31 @@ export function App() {
     roomApi
       .reconnect(credentials)
       .then((result) => {
+        if (cancelled) {
+          return;
+        }
         if (result.must_restart_peer_connection) {
           webRtc.cleanupPeerConnection();
         }
+        setIsSessionReady(true);
       })
       .catch(() => {
+        if (cancelled) {
+          return;
+        }
         clearCredentials();
         setCredentials(null);
       });
-  }, []);
+    return () => {
+      cancelled = true;
+    };
+  }, [credentials]);
 
   const create = useCallback(
     async (username: string) => {
       const nextCredentials = await roomApi.create(username);
       saveCredentials(nextCredentials);
+      setIsSessionReady(false);
       setCredentials(nextCredentials);
       dispatch({ type: "BOOTSTRAP", payload: nextCredentials });
     },
@@ -149,6 +190,7 @@ export function App() {
         return;
       }
       const nextCredentials = await roomApi.join(requestedRoomCode, username);
+      setIsSessionReady(false);
       setCredentials(nextCredentials);
       dispatch({ type: "BOOTSTRAP", payload: nextCredentials });
     },
@@ -198,6 +240,7 @@ export function App() {
     await roomApi.leave(credentials);
     webRtc.cleanupPeerConnection();
     webRtc.stopMedia();
+    setIsSessionReady(false);
     setCredentials(null);
     history.pushState(null, "", "/");
   }, [credentials, roomApi, state.reservedParticipantCount, webRtc]);

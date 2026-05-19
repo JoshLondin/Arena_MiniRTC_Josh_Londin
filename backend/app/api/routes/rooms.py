@@ -43,6 +43,19 @@ async def join_room(
     session: SessionDep,
 ) -> JoinRoomResponse:
     result = await room_service.join_room(session, room_code=room_code, username=request.username)
+    state = await room_service.get_room_state_payload(session, room_code=room_code)
+    await signaling_service.connection_manager.broadcast_room(
+        room_code=room_code,
+        message={
+            "type": "participant-joined",
+            "payload": {
+                "participant_id": str(result.participant.participant_id),
+                "username": result.participant.username,
+                "reserved_participant_count": result.reserved_participant_count,
+            },
+        },
+    )
+    await signaling_service.broadcast_room_state(room_code=room_code, state=state)
     return JoinRoomResponse.model_validate(result, from_attributes=True)
 
 
