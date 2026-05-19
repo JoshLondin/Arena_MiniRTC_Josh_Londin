@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes.rooms import router as rooms_router
+from app.api.routes.signaling import router as signaling_router
 from app.core.config import settings
 from app.core.errors import install_error_handlers
 
@@ -19,6 +20,7 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
     app.include_router(rooms_router)
+    app.include_router(signaling_router)
 
     @app.get("/health")
     async def health() -> dict[str, str]:
@@ -28,4 +30,3 @@ def create_app() -> FastAPI:
 
 
 app = create_app()
-

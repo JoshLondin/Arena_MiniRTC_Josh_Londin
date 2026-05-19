@@ -3,7 +3,12 @@ from __future__ import annotations
 import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from app.core.errors import InvalidHostTokenError, RoomFullError, RoomNotFoundError
+from app.core.errors import (
+    CallAlreadyStartedError,
+    InvalidHostTokenError,
+    RoomFullError,
+    RoomNotFoundError,
+)
 from app.db.base import Base
 from app.db.models import CallStatus, RoomStatus
 from app.services.room_service import RoomService
@@ -95,4 +100,103 @@ async def test_host_delete_rejects_invalid_token(session_factory, room_service):
                 room_code=created.room_code,
                 host_token="wrong",
             )
+
+
+async def test_start_call_first_sender_wins(session_factory, room_service):
+    async with session_factory() as session:
+        created = await room_service.create_room(session, username="Alice")
+        joined = await room_service.join_room(session, room_code=created.room_code, username="Bob")
+        result = await room_service.start_call(
+            session,
+            room_code=created.room_code,
+            participant_id=created.participant.participant_id,
+        )
+        with pytest.raises(CallAlreadyStartedError):
+            await room_service.start_call(
+                session,
+                room_code=created.room_code,
+                participant_id=joined.participant.participant_id,
+            )
+
+    assert result.changed is True
+    assert result.room_state.room_status == RoomStatus.CALL_PENDING.value
+    assert result.room_state.call_status == CallStatus.CALL_PENDING.value
+    assert result.room_state.call_host_participant_id == created.participant.participant_id
+
+
+async def test_join_call_moves_pending_call_to_negotiating(session_factory, room_service):
+    async with session_factory() as session:
+        created = await room_service.create_room(session, username="Alice")
+        joined = await room_service.join_room(session, room_code=created.room_code, username="Bob")
+        await room_service.start_call(
+            session,
+            room_code=created.room_code,
+            participant_id=created.participant.participant_id,
+        )
+        result = await room_service.join_call(
+            session,
+            room_code=created.room_code,
+            participant_id=joined.participant.participant_id,
+        )
+
+    assert result.changed is True
+    assert result.room_state.room_status == RoomStatus.NEGOTIATING.value
+    assert result.room_state.call_status == CallStatus.NEGOTIATING.value
+
+
+async def test_media_connected_requires_both_participants(session_factory, room_service):
+    async with session_factory() as session:
+        created = await room_service.create_room(session, username="Alice")
+        joined = await room_service.join_room(session, room_code=created.room_code, username="Bob")
+        await room_service.start_call(
+            session,
+            room_code=created.room_code,
+            participant_id=created.participant.participant_id,
+        )
+        await room_service.join_call(
+            session,
+            room_code=created.room_code,
+            participant_id=joined.participant.participant_id,
+        )
+        first = await room_service.mark_media_connected(
+            session,
+            room_code=created.room_code,
+            participant_id=created.participant.participant_id,
+        )
+        second = await room_service.mark_media_connected(
+            session,
+            room_code=created.room_code,
+            participant_id=joined.participant.participant_id,
+        )
+
+    assert first.changed is False
+    assert first.room_state.call_status == CallStatus.NEGOTIATING.value
+    assert second.changed is True
+    assert second.room_state.call_status == CallStatus.IN_CALL.value
+
+
+async def test_end_call_from_participant_keeps_room_ready(session_factory, room_service):
+    async with session_factory() as session:
+        created = await room_service.create_room(session, username="Alice")
+        joined = await room_service.join_room(session, room_code=created.room_code, username="Bob")
+        await room_service.start_call(
+            session,
+            room_code=created.room_code,
+            participant_id=created.participant.participant_id,
+        )
+        await room_service.join_call(
+            session,
+            room_code=created.room_code,
+            participant_id=joined.participant.participant_id,
+        )
+        result = await room_service.end_call(
+            session,
+            room_code=created.room_code,
+            participant_id=joined.participant.participant_id,
+        )
+
+    assert result.changed is True
+    assert result.reason == "PARTICIPANT_LEFT_CALL"
+    assert result.room_state.call_status == CallStatus.IDLE.value
+    assert result.room_state.room_status == RoomStatus.READY_FOR_CALL.value
 

@@ -136,6 +136,44 @@ class RoomRepository:
             values["call_status"] = call_status
         await session.execute(update(Room).where(Room.id == room_id).values(**values))
 
+    async def update_participant_last_seen(
+        self,
+        session: AsyncSession,
+        *,
+        participant_id: UUID,
+        last_seen_at: datetime,
+    ) -> None:
+        await session.execute(
+            update(Participant)
+            .where(Participant.id == participant_id)
+            .values(last_seen_at=last_seen_at)
+        )
+
+    async def record_media_connected(
+        self,
+        session: AsyncSession,
+        *,
+        participant_id: UUID,
+        connected_at: datetime,
+    ) -> None:
+        await session.execute(
+            update(Participant)
+            .where(Participant.id == participant_id)
+            .values(media_connected_at=connected_at)
+        )
+
+    async def clear_media_connected_for_room(
+        self,
+        session: AsyncSession,
+        *,
+        room_id: UUID,
+    ) -> None:
+        await session.execute(
+            update(Participant)
+            .where(Participant.room_id == room_id)
+            .values(media_connected_at=None)
+        )
+
     async def set_room_host_participant(
         self,
         session: AsyncSession,
