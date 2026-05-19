@@ -247,6 +247,42 @@ class SignalingService:
             message=self._event("room-state", self._room_state_payload(state)),
         )
 
+    async def broadcast_room_state(
+        self,
+        *,
+        room_code: str,
+        state: RoomStatePayload | None,
+    ) -> None:
+        if state is None:
+            return
+        await self._broadcast_room_state(room_code=room_code, state=state)
+
+    async def handle_disconnect(
+        self,
+        session: AsyncSession,
+        *,
+        room_code: str,
+        participant_id: UUID,
+    ) -> None:
+        result = await self.room_service.mark_participant_disconnected(
+            session,
+            room_code=room_code,
+            participant_id=participant_id,
+        )
+        if not result.changed:
+            return
+        await self.connection_manager.broadcast_room(
+            room_code=room_code,
+            message=self._event(
+                "participant-disconnected",
+                {
+                    "participant_id": str(participant_id),
+                    "reconnect_timeout_seconds": result.reconnect_timeout_seconds,
+                },
+            ),
+        )
+        await self.broadcast_room_state(room_code=room_code, state=result.room_state)
+
     async def _send_error(self, *, room_code: str, participant_id: UUID, error: AppError) -> None:
         await self.connection_manager.send_to_participant(
             room_code=room_code,

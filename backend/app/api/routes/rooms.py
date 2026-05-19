@@ -14,15 +14,16 @@ from app.api.schemas import (
     IceServersResponse,
     JoinRoomRequest,
     JoinRoomResponse,
+    LeaveRoomRequest,
+    LeaveRoomResponse,
     PublicRoomResponse,
+    ReconnectRequest,
+    ReconnectResponse,
 )
 from app.db.session import get_session
-from app.services.ice_service import IceService
-from app.services.room_service import RoomService
+from app.services.runtime import ice_service, room_service, signaling_service
 
 router = APIRouter(prefix="/rooms", tags=["rooms"])
-room_service = RoomService()
-ice_service = IceService()
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 
 
@@ -66,6 +67,59 @@ async def delete_room(
         host_token=request.host_token,
     )
     return DeleteRoomResponse.model_validate(result, from_attributes=True)
+
+
+@router.post("/{room_code}/leave", response_model=LeaveRoomResponse)
+async def leave_room(
+    room_code: str,
+    request: LeaveRoomRequest,
+    session: SessionDep,
+) -> LeaveRoomResponse:
+    result = await room_service.leave_room(
+        session,
+        room_code=room_code,
+        participant_id=request.participant_id,
+        participant_token=request.participant_token,
+    )
+    if result.call_ended:
+        await signaling_service.connection_manager.broadcast_room(
+            room_code=room_code,
+            message={"type": "call-ended", "payload": {"reason": "PARTICIPANT_LEFT_ROOM"}},
+        )
+    if result.room_deleted:
+        await signaling_service.connection_manager.broadcast_room(
+            room_code=room_code,
+            message={"type": "room-deleted", "payload": {"reason": "EMPTY_ROOM"}},
+        )
+    else:
+        await signaling_service.connection_manager.broadcast_room(
+            room_code=room_code,
+            message={
+                "type": "participant-left",
+                "payload": {
+                    "participant_id": str(result.participant_id),
+                    "reserved_participant_count": result.reserved_participant_count,
+                    "call_ended": result.call_ended,
+                },
+            },
+        )
+        await signaling_service.broadcast_room_state(room_code=room_code, state=result.room_state)
+    return LeaveRoomResponse(left=result.left, room_deleted=result.room_deleted)
+
+
+@router.post("/{room_code}/reconnect", response_model=ReconnectResponse)
+async def reconnect_room(
+    room_code: str,
+    request: ReconnectRequest,
+    session: SessionDep,
+) -> ReconnectResponse:
+    result = await room_service.reconnect_participant(
+        session,
+        room_code=room_code,
+        participant_id=request.participant_id,
+        participant_token=request.participant_token,
+    )
+    return ReconnectResponse.model_validate(result, from_attributes=True)
 
 
 @router.post("/{room_code}/ice-servers", response_model=IceServersResponse)

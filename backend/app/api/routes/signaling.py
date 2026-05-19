@@ -6,7 +6,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from app.core.errors import InvalidParticipantError, RoomNotFoundError
 from app.db.session import AsyncSessionLocal
-from app.services.signaling_service import SignalingService
+from app.services.runtime import signaling_service
 from app.websocket.schemas import (
     WS_CLOSE_INTERNAL_ERROR,
     WS_CLOSE_INVALID_PARTICIPANT,
@@ -14,7 +14,6 @@ from app.websocket.schemas import (
 )
 
 router = APIRouter(tags=["signaling"])
-signaling_service = SignalingService()
 
 
 @router.websocket("/ws/rooms/{room_code}")
@@ -69,11 +68,18 @@ async def room_websocket(
                     raw_message=raw_message,
                 )
     except WebSocketDisconnect:
-        signaling_service.connection_manager.disconnect(
+        removed_current = signaling_service.connection_manager.disconnect(
             room_code=room_code,
             participant_id=parsed_participant_id,
             websocket=websocket,
         )
+        if removed_current:
+            async with AsyncSessionLocal() as session:
+                await signaling_service.handle_disconnect(
+                    session,
+                    room_code=room_code,
+                    participant_id=parsed_participant_id,
+                )
     except Exception:
         signaling_service.connection_manager.disconnect(
             room_code=room_code,
@@ -81,4 +87,3 @@ async def room_websocket(
             websocket=websocket,
         )
         await websocket.close(code=WS_CLOSE_INTERNAL_ERROR)
-

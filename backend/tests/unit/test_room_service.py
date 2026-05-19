@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+from sqlalchemy import update
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.core.errors import (
@@ -10,7 +11,7 @@ from app.core.errors import (
     RoomNotFoundError,
 )
 from app.db.base import Base
-from app.db.models import CallStatus, RoomStatus
+from app.db.models import CallStatus, DisconnectContext, Participant, ParticipantStatus, RoomStatus
 from app.services.room_service import RoomService
 
 
@@ -200,3 +201,114 @@ async def test_end_call_from_participant_keeps_room_ready(session_factory, room_
     assert result.room_state.call_status == CallStatus.IDLE.value
     assert result.room_state.room_status == RoomStatus.READY_FOR_CALL.value
 
+
+async def test_active_call_disconnect_uses_45_second_timeout(session_factory, room_service):
+    async with session_factory() as session:
+        created = await room_service.create_room(session, username="Alice")
+        await room_service.join_room(session, room_code=created.room_code, username="Bob")
+        await room_service.start_call(
+            session,
+            room_code=created.room_code,
+            participant_id=created.participant.participant_id,
+        )
+        result = await room_service.mark_participant_disconnected(
+            session,
+            room_code=created.room_code,
+            participant_id=created.participant.participant_id,
+        )
+        participant = await room_service.repository.get_participant(
+            session,
+            participant_id=created.participant.participant_id,
+        )
+
+    assert result.changed is True
+    assert result.reconnect_timeout_seconds == 45
+    assert participant.status == ParticipantStatus.DISCONNECTED.value
+    assert participant.disconnect_context == DisconnectContext.ACTIVE_CALL.value
+
+
+async def test_room_only_disconnect_during_pending_call_uses_300_seconds(
+    session_factory,
+    room_service,
+):
+    async with session_factory() as session:
+        created = await room_service.create_room(session, username="Alice")
+        joined = await room_service.join_room(session, room_code=created.room_code, username="Bob")
+        await room_service.start_call(
+            session,
+            room_code=created.room_code,
+            participant_id=created.participant.participant_id,
+        )
+        result = await room_service.mark_participant_disconnected(
+            session,
+            room_code=created.room_code,
+            participant_id=joined.participant.participant_id,
+        )
+        participant = await room_service.repository.get_participant(
+            session,
+            participant_id=joined.participant.participant_id,
+        )
+
+    assert result.reconnect_timeout_seconds == 300
+    assert participant.disconnect_context == DisconnectContext.ROOM_ONLY.value
+
+
+async def test_reconnecting_room_only_participant_during_pending_call_does_not_restart(
+    session_factory,
+    room_service,
+):
+    async with session_factory() as session:
+        created = await room_service.create_room(session, username="Alice")
+        joined = await room_service.join_room(session, room_code=created.room_code, username="Bob")
+        await room_service.start_call(
+            session,
+            room_code=created.room_code,
+            participant_id=created.participant.participant_id,
+        )
+        await room_service.mark_participant_disconnected(
+            session,
+            room_code=created.room_code,
+            participant_id=joined.participant.participant_id,
+        )
+        result = await room_service.reconnect_participant(
+            session,
+            room_code=created.room_code,
+            participant_id=joined.participant.participant_id,
+            participant_token=joined.participant_token,
+        )
+
+    assert result.must_restart_peer_connection is False
+    assert result.call_status == CallStatus.CALL_PENDING.value
+    assert result.room_status == RoomStatus.CALL_PENDING.value
+
+
+async def test_expired_active_call_participant_removal_ends_call(session_factory, room_service):
+    async with session_factory() as session:
+        created = await room_service.create_room(session, username="Alice")
+        await room_service.join_room(session, room_code=created.room_code, username="Bob")
+        await room_service.start_call(
+            session,
+            room_code=created.room_code,
+            participant_id=created.participant.participant_id,
+        )
+        await room_service.mark_participant_disconnected(
+            session,
+            room_code=created.room_code,
+            participant_id=created.participant.participant_id,
+        )
+        await session.execute(
+            update(Participant)
+            .where(Participant.id == created.participant.participant_id)
+            .values(reconnect_deadline_at=room_service._now())
+        )
+        await session.commit()
+        result = await room_service.remove_expired_participant(
+            session,
+            participant_id=created.participant.participant_id,
+        )
+
+    assert result is not None
+    assert result.call_ended is True
+    assert result.room_deleted is False
+    assert result.room_state.call_status == CallStatus.IDLE.value
+    assert result.room_state.room_status == RoomStatus.WAITING_FOR_PARTICIPANT.value

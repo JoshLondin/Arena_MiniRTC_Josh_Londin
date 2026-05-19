@@ -31,6 +31,15 @@ class RoomRepository:
         result = await session.execute(select(Room).where(Room.room_code == room_code))
         return result.scalar_one_or_none()
 
+    async def get_room_by_id(
+        self,
+        session: AsyncSession,
+        *,
+        room_id: UUID,
+    ) -> Room | None:
+        result = await session.execute(select(Room).where(Room.id == room_id))
+        return result.scalar_one_or_none()
+
     async def get_room_by_code_for_update(
         self,
         session: AsyncSession,
@@ -40,6 +49,15 @@ class RoomRepository:
         result = await session.execute(
             select(Room).where(Room.room_code == room_code).with_for_update()
         )
+        return result.scalar_one_or_none()
+
+    async def get_room_by_id_for_update(
+        self,
+        session: AsyncSession,
+        *,
+        room_id: UUID,
+    ) -> Room | None:
+        result = await session.execute(select(Room).where(Room.id == room_id).with_for_update())
         return result.scalar_one_or_none()
 
     async def create_participant(
@@ -162,6 +180,45 @@ class RoomRepository:
             .values(media_connected_at=connected_at)
         )
 
+    async def mark_participant_disconnected(
+        self,
+        session: AsyncSession,
+        *,
+        participant_id: UUID,
+        disconnected_at: datetime,
+        reconnect_deadline_at: datetime,
+        disconnect_context: str,
+    ) -> None:
+        await session.execute(
+            update(Participant)
+            .where(Participant.id == participant_id)
+            .values(
+                status=ParticipantStatus.DISCONNECTED.value,
+                disconnected_at=disconnected_at,
+                reconnect_deadline_at=reconnect_deadline_at,
+                disconnect_context=disconnect_context,
+            )
+        )
+
+    async def mark_participant_active(
+        self,
+        session: AsyncSession,
+        *,
+        participant_id: UUID,
+        last_seen_at: datetime,
+    ) -> None:
+        await session.execute(
+            update(Participant)
+            .where(Participant.id == participant_id)
+            .values(
+                status=ParticipantStatus.ACTIVE.value,
+                disconnected_at=None,
+                reconnect_deadline_at=None,
+                disconnect_context=None,
+                last_seen_at=last_seen_at,
+            )
+        )
+
     async def clear_media_connected_for_room(
         self,
         session: AsyncSession,
@@ -214,6 +271,43 @@ class RoomRepository:
                 Participant.reconnect_deadline_at <= now,
             )
         )
+
+    async def list_expired_disconnected_participants(
+        self,
+        session: AsyncSession,
+        *,
+        now: datetime,
+        limit: int = 100,
+    ) -> list[Participant]:
+        result = await session.execute(
+            select(Participant)
+            .where(
+                Participant.status == ParticipantStatus.DISCONNECTED.value,
+                Participant.reconnect_deadline_at.is_not(None),
+                Participant.reconnect_deadline_at <= now,
+            )
+            .order_by(Participant.reconnect_deadline_at)
+            .limit(limit)
+        )
+        return list(result.scalars().all())
+
+    async def list_stale_active_participants(
+        self,
+        session: AsyncSession,
+        *,
+        stale_before: datetime,
+        limit: int = 100,
+    ) -> list[Participant]:
+        result = await session.execute(
+            select(Participant)
+            .where(
+                Participant.status == ParticipantStatus.ACTIVE.value,
+                Participant.last_seen_at < stale_before,
+            )
+            .order_by(Participant.last_seen_at)
+            .limit(limit)
+        )
+        return list(result.scalars().all())
 
     async def remove_participant(
         self,

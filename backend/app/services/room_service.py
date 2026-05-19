@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.errors import (
     CallAlreadyStartedError,
     InvalidHostTokenError,
@@ -15,7 +16,14 @@ from app.core.errors import (
     RoomNotFoundError,
 )
 from app.core.security import generate_opaque_token, generate_room_code, hash_token, verify_token
-from app.db.models import CallStatus, Participant, ParticipantStatus, Room, RoomStatus
+from app.db.models import (
+    CallStatus,
+    DisconnectContext,
+    Participant,
+    ParticipantStatus,
+    Room,
+    RoomStatus,
+)
 from app.repositories.room_repository import RoomRepository
 
 
@@ -66,6 +74,35 @@ class RoomStatePayload:
 @dataclass(slots=True)
 class DeleteRoomResult:
     deleted: bool
+
+
+@dataclass(slots=True)
+class LeaveRoomResult:
+    left: bool
+    room_deleted: bool
+    participant_id: UUID
+    reserved_participant_count: int
+    call_ended: bool
+    room_state: RoomStatePayload | None = None
+
+
+@dataclass(slots=True)
+class ReconnectResult:
+    participant_id: UUID
+    room_code: str
+    room_status: str
+    call_status: str
+    reserved_participant_count: int
+    must_restart_peer_connection: bool
+    was_disconnected: bool
+
+
+@dataclass(slots=True)
+class DisconnectResult:
+    changed: bool
+    participant_id: UUID
+    reconnect_timeout_seconds: int
+    room_state: RoomStatePayload | None = None
 
 
 @dataclass(slots=True)
@@ -393,6 +430,256 @@ class RoomService:
             await self.repository.delete_room(session, room_id=room.id)
         return DeleteRoomResult(deleted=True)
 
+    async def leave_room(
+        self,
+        session: AsyncSession,
+        *,
+        room_code: str,
+        participant_id: UUID,
+        participant_token: str,
+    ) -> LeaveRoomResult:
+        async with session.begin():
+            room = await self.repository.get_room_by_code_for_update(session, room_code=room_code)
+            if room is None:
+                raise RoomNotFoundError()
+            participant = await self.repository.get_participant_for_update(
+                session,
+                participant_id=participant_id,
+            )
+            if (
+                participant is None
+                or participant.room_id != room.id
+                or not verify_token(participant_token, participant.participant_token_hash)
+            ):
+                raise InvalidParticipantError()
+
+            call_ended = room.call_status != CallStatus.IDLE.value
+            if call_ended:
+                room.call_status = CallStatus.IDLE.value
+                room.call_host_participant_id = None
+                await self.repository.clear_media_connected_for_room(session, room_id=room.id)
+
+            await self.repository.remove_participant(session, participant_id=participant.id)
+            remaining = await self.repository.list_room_participants(session, room_id=room.id)
+            if not remaining:
+                await self.repository.delete_room(session, room_id=room.id)
+                return LeaveRoomResult(
+                    left=True,
+                    room_deleted=True,
+                    participant_id=participant.id,
+                    reserved_participant_count=0,
+                    call_ended=call_ended,
+                )
+
+            reserved = await self.repository.list_reserved_slot_participants(
+                session,
+                room_id=room.id,
+                now=self._now(),
+            )
+            if room.call_status == CallStatus.IDLE.value:
+                room.status = self._status_for_idle_room(reserved)
+            payload = await self._room_state_payload(session, room=room)
+        return LeaveRoomResult(
+            left=True,
+            room_deleted=False,
+            participant_id=participant_id,
+            reserved_participant_count=payload.reserved_participant_count,
+            call_ended=call_ended,
+            room_state=payload,
+        )
+
+    async def reconnect_participant(
+        self,
+        session: AsyncSession,
+        *,
+        room_code: str,
+        participant_id: UUID,
+        participant_token: str,
+    ) -> ReconnectResult:
+        now = self._now()
+        async with session.begin():
+            room = await self.repository.get_room_by_code_for_update(session, room_code=room_code)
+            if room is None:
+                raise RoomNotFoundError()
+            participant = await self.repository.get_participant_for_update(
+                session,
+                participant_id=participant_id,
+            )
+            if (
+                participant is None
+                or participant.room_id != room.id
+                or not verify_token(participant_token, participant.participant_token_hash)
+            ):
+                raise InvalidParticipantError()
+
+            was_disconnected = participant.status == ParticipantStatus.DISCONNECTED.value
+            previous_context = participant.disconnect_context
+            if was_disconnected:
+                if participant.reconnect_deadline_at is None or not self._is_future(
+                    participant.reconnect_deadline_at,
+                    now,
+                ):
+                    raise InvalidParticipantError()
+                await self.repository.mark_participant_active(
+                    session,
+                    participant_id=participant.id,
+                    last_seen_at=now,
+                )
+                participant.status = ParticipantStatus.ACTIVE.value
+                participant.disconnect_context = None
+                participant.reconnect_deadline_at = None
+                participant.disconnected_at = None
+            elif participant.status == ParticipantStatus.ACTIVE.value:
+                await self.repository.update_participant_last_seen(
+                    session,
+                    participant_id=participant.id,
+                    last_seen_at=now,
+                )
+            else:
+                raise InvalidParticipantError()
+
+            must_restart = await self._recompute_call_state_for_reconnect(
+                session,
+                room=room,
+                participant=participant,
+                previous_context=previous_context,
+            )
+            if must_restart and room.call_status in {
+                CallStatus.NEGOTIATING.value,
+                CallStatus.CALL_PENDING.value,
+            }:
+                await self.repository.clear_media_connected_for_room(session, room_id=room.id)
+            if room.call_status == CallStatus.IDLE.value:
+                reserved = await self.repository.list_reserved_slot_participants(
+                    session,
+                    room_id=room.id,
+                    now=now,
+                )
+                room.status = self._status_for_idle_room(reserved)
+
+            payload = await self._room_state_payload(session, room=room)
+        return ReconnectResult(
+            participant_id=participant_id,
+            room_code=room_code,
+            room_status=payload.room_status,
+            call_status=payload.call_status,
+            reserved_participant_count=payload.reserved_participant_count,
+            must_restart_peer_connection=must_restart,
+            was_disconnected=was_disconnected,
+        )
+
+    async def mark_participant_disconnected(
+        self,
+        session: AsyncSession,
+        *,
+        room_code: str,
+        participant_id: UUID,
+    ) -> DisconnectResult:
+        now = self._now()
+        async with session.begin():
+            room = await self.repository.get_room_by_code_for_update(session, room_code=room_code)
+            if room is None:
+                raise RoomNotFoundError()
+            participant = await self.repository.get_participant_for_update(
+                session,
+                participant_id=participant_id,
+            )
+            if participant is None or participant.room_id != room.id:
+                raise InvalidParticipantError()
+            if participant.status == ParticipantStatus.DISCONNECTED.value:
+                payload = await self._room_state_payload(session, room=room)
+                return DisconnectResult(
+                    changed=False,
+                    participant_id=participant.id,
+                    reconnect_timeout_seconds=0,
+                    room_state=payload,
+                )
+
+            context = self._disconnect_context(room=room, participant=participant)
+            timeout_seconds = (
+                settings.active_call_reconnect_timeout_seconds
+                if context == DisconnectContext.ACTIVE_CALL.value
+                else settings.room_offline_timeout_seconds
+            )
+            await self.repository.mark_participant_disconnected(
+                session,
+                participant_id=participant.id,
+                disconnected_at=now,
+                reconnect_deadline_at=now + timedelta(seconds=timeout_seconds),
+                disconnect_context=context,
+            )
+            participant.status = ParticipantStatus.DISCONNECTED.value
+            participant.reconnect_deadline_at = now + timedelta(seconds=timeout_seconds)
+            participant.disconnect_context = context
+            payload = await self._room_state_payload(session, room=room)
+        return DisconnectResult(
+            changed=True,
+            participant_id=participant_id,
+            reconnect_timeout_seconds=timeout_seconds,
+            room_state=payload,
+        )
+
+    async def remove_expired_participant(
+        self,
+        session: AsyncSession,
+        *,
+        participant_id: UUID,
+    ) -> LeaveRoomResult | None:
+        now = self._now()
+        async with session.begin():
+            participant = await self.repository.get_participant_for_update(
+                session,
+                participant_id=participant_id,
+            )
+            if (
+                participant is None
+                or participant.status != ParticipantStatus.DISCONNECTED.value
+                or participant.reconnect_deadline_at is None
+                or self._is_future(participant.reconnect_deadline_at, now)
+            ):
+                return None
+            room = await self.repository.get_room_by_id_for_update(
+                session,
+                room_id=participant.room_id,
+            )
+            if room is None:
+                return None
+
+            call_ended = participant.disconnect_context == DisconnectContext.ACTIVE_CALL.value
+            if call_ended:
+                room.call_status = CallStatus.IDLE.value
+                room.call_host_participant_id = None
+                await self.repository.clear_media_connected_for_room(session, room_id=room.id)
+
+            await self.repository.remove_participant(session, participant_id=participant.id)
+            remaining = await self.repository.list_room_participants(session, room_id=room.id)
+            if not remaining:
+                await self.repository.delete_room(session, room_id=room.id)
+                return LeaveRoomResult(
+                    left=True,
+                    room_deleted=True,
+                    participant_id=participant.id,
+                    reserved_participant_count=0,
+                    call_ended=call_ended,
+                )
+
+            reserved = await self.repository.list_reserved_slot_participants(
+                session,
+                room_id=room.id,
+                now=now,
+            )
+            if room.call_status == CallStatus.IDLE.value:
+                room.status = self._status_for_idle_room(reserved)
+            payload = await self._room_state_payload(session, room=room)
+        return LeaveRoomResult(
+            left=True,
+            room_deleted=False,
+            participant_id=participant_id,
+            reserved_participant_count=payload.reserved_participant_count,
+            call_ended=call_ended,
+            room_state=payload,
+        )
+
     async def validate_participant_credentials(
         self,
         session: AsyncSession,
@@ -481,6 +768,45 @@ class RoomService:
             return participant.status == ParticipantStatus.ACTIVE.value
         return False
 
+    def _disconnect_context(self, *, room: Room, participant: Participant) -> str:
+        if self._is_active_call_participant(room=room, participant=participant):
+            return DisconnectContext.ACTIVE_CALL.value
+        return DisconnectContext.ROOM_ONLY.value
+
+    async def _recompute_call_state_for_reconnect(
+        self,
+        session: AsyncSession,
+        *,
+        room: Room,
+        participant: Participant,
+        previous_context: str | None,
+    ) -> bool:
+        if room.call_status == CallStatus.IDLE.value:
+            return False
+
+        if room.call_status == CallStatus.CALL_PENDING.value:
+            return (
+                participant.id == room.call_host_participant_id
+                or previous_context == DisconnectContext.ACTIVE_CALL.value
+            )
+
+        if room.call_status in {CallStatus.NEGOTIATING.value, CallStatus.IN_CALL.value}:
+            active = await self._active_participants(session, room_id=room.id)
+            if len(active) >= 2:
+                room.call_status = CallStatus.NEGOTIATING.value
+                room.status = RoomStatus.NEGOTIATING.value
+            else:
+                room.call_status = CallStatus.CALL_PENDING.value
+                room.status = RoomStatus.CALL_PENDING.value
+            return True
+
+        return False
+
+    def _is_future(self, value: datetime, now: datetime) -> bool:
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=UTC)
+        return value > now
+
     async def _room_state_payload(self, session: AsyncSession, *, room: Room) -> RoomStatePayload:
         now = self._now()
         participants = await self.repository.list_room_participants(session, room_id=room.id)
@@ -491,7 +817,7 @@ class RoomService:
             or (
                 participant.status == ParticipantStatus.DISCONNECTED.value
                 and participant.reconnect_deadline_at is not None
-                and participant.reconnect_deadline_at > now
+                and self._is_future(participant.reconnect_deadline_at, now)
             )
         ]
         return RoomStatePayload(

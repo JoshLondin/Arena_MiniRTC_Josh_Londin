@@ -71,6 +71,30 @@ class JoinRoomResponse(BaseModel):
     reserved_participant_count: int
 
 
+class ReconnectRequest(BaseModel):
+    participant_id: UUID
+    participant_token: str
+
+
+class ReconnectResponse(BaseModel):
+    participant_id: UUID
+    room_code: str
+    room_status: RoomStatusLiteral
+    call_status: CallStatusLiteral
+    reserved_participant_count: int
+    must_restart_peer_connection: bool
+
+
+class LeaveRoomRequest(BaseModel):
+    participant_id: UUID
+    participant_token: str
+
+
+class LeaveRoomResponse(BaseModel):
+    left: bool
+    room_deleted: bool
+
+
 class DeleteRoomRequest(BaseModel):
     host_token: str
 
@@ -100,4 +124,3 @@ class IceServersRequest(BaseModel):
 
 class IceServersResponse(BaseModel):
     ice_servers: list[IceServer]
-
