@@ -1,6 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 
 import type { RoomState } from "../state/roomReducer";
+import {
+  selectCanJoinCall,
+  selectCanStartCall,
+  selectCurrentParticipant,
+  selectRemoteParticipant
+} from "../state/roomSelectors";
 import { CallControls } from "./CallControls";
 import { ConnectionStatus } from "./ConnectionStatus";
 import { VideoPanel } from "./VideoPanel";
@@ -27,22 +33,12 @@ export function RoomPage({
   const [hasCopiedShareUrl, setHasCopiedShareUrl] = useState(false);
   const shareUrlInputRef = useRef<HTMLInputElement | null>(null);
   const shareUrl = `${location.origin}/room/${state.roomCode}`;
-  const activeParticipants = state.participants.filter((participant) => participant.status === "ACTIVE");
-  const currentParticipant =
-    state.participants.find((participant) => participant.participant_id === state.participantId) ?? null;
-  const remoteParticipant =
-    state.participants.find((participant) => participant.participant_id !== state.participantId) ?? null;
+  const currentParticipant = selectCurrentParticipant(state);
+  const remoteParticipant = selectRemoteParticipant(state);
   const isCallHost = state.callHostParticipantId === state.participantId;
   const hasLocalMedia = state.localStream !== null;
-  const showJoinCall =
-    state.connectionStatus === "connected" &&
-    state.callStatus === "CALL_PENDING" &&
-    state.callHostParticipantId !== state.participantId &&
-    !hasLocalMedia;
-  const showStartCall =
-    state.connectionStatus === "connected" &&
-    state.callStatus === "IDLE" &&
-    activeParticipants.length === state.capacity;
+  const showJoinCall = selectCanJoinCall(state);
+  const showStartCall = selectCanStartCall(state);
   const hasCamera = (state.localStream?.getVideoTracks().length ?? 0) > 0;
   const someoneReconnecting =
     state.reservedParticipantCount === 2 &&

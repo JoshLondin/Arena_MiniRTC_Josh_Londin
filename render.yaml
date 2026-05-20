@@ -1,0 +1,40 @@
+databases:
+  - name: arena-minirtc-josh-londin-db
+    databaseName: minirtc
+    user: minirtc
+
+services:
+  - type: web
+    name: arena-minirtc-josh-londin-api
+    runtime: docker
+    rootDir: backend
+    plan: free
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: arena-minirtc-josh-londin-db
+          property: connectionString
+      - key: TOKEN_HASH_SECRET
+        generateValue: true
+      - key: CORS_ALLOWED_ORIGINS
+        value: https://arena-minirtc-josh-londin-web.onrender.com
+      - key: STUN_SERVER_URL
+        value: stun:stun.l.google.com:19302
+      - key: TURN_SERVER_URL
+        value: ""
+      - key: TURN_USERNAME
+        value: ""
+      - key: TURN_PASSWORD
+        value: ""
+
+  - type: web
+    name: arena-minirtc-josh-londin-web
+    runtime: static
+    rootDir: frontend
+    buildCommand: npm ci && npm run build
+    staticPublishPath: dist
+    envVars:
+      - key: VITE_API_BASE_URL
+        value: https://arena-minirtc-josh-londin-api.onrender.com
+      - key: VITE_WS_BASE_URL
+        value: wss://arena-minirtc-josh-londin-api.onrender.com

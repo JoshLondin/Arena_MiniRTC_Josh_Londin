@@ -2691,14 +2691,14 @@ Owns media permissions and device errors:
 - returns TURN credentials only from backend endpoint.
 - returns both STUN and TURN entries when all TURN env vars are configured.
 
-### Config (NEW)
+### Config
 
 - normalizes `postgres://` database URLs to `postgresql+asyncpg://`.
 - normalizes `postgresql://` database URLs to `postgresql+asyncpg://`.
 - preserves `postgresql+asyncpg://` database URLs unchanged.
 - parses comma-separated `CORS_ALLOWED_ORIGINS` into the backend CORS allowlist.
 
-### Frontend Room State (NEW)
+### Frontend Room State
 
 - derives `activeParticipantCount` from active room participants.
 - derives `currentParticipant` from current credentials.
@@ -2707,7 +2707,7 @@ Owns media permissions and device errors:
 - derives `canJoinCall` only for the non-host participant after the other participant starts a call.
 - derives `isLastParticipant` from active and reserved participant counts.
 
-### Frontend Hooks (NEW)
+### Frontend Hooks
 
 - `useWebSocket` does not recreate the socket when React callback props change.
 - `useWebSocket` reconnects only on unexpected close codes.

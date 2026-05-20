@@ -8,6 +8,7 @@ import { useWebRTC } from "./hooks/useWebRTC";
 import { useWebSocket } from "./hooks/useWebSocket";
 import { initialRoomState, roomReducer } from "./state/roomReducer";
 import type { MediaStatus } from "./state/roomReducer";
+import { selectIsLastParticipant } from "./state/roomSelectors";
 import type { ClientSignalingMessage, RoomCredentials, ServerSignalingMessage } from "./types/signaling";
 
 function roomCodeFromPath(): string | null {
@@ -251,9 +252,7 @@ export function App() {
     if (!credentials) {
       return;
     }
-    const activeParticipantCount = state.participants.filter((participant) => participant.status === "ACTIVE").length;
-    const isFinalParticipant = state.reservedParticipantCount <= 1 && activeParticipantCount <= 1;
-    if (isFinalParticipant) {
+    if (selectIsLastParticipant(state)) {
       const confirmed = confirm("You're the last person in the room. Leaving it will close the room.");
       if (!confirmed) {
         return;
@@ -265,7 +264,7 @@ export function App() {
     setIsSessionReady(false);
     setCredentials(null);
     history.pushState(null, "", "/");
-  }, [credentials, roomApi, state.reservedParticipantCount, webRtc]);
+  }, [credentials, roomApi, state, webRtc]);
 
   const toggleCamera = useCallback(async () => {
     if (state.isCameraEnabled) {

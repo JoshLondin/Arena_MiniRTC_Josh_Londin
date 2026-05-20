@@ -133,3 +133,26 @@ async def test_signaling_rejects_mismatched_payload_participant(session_factory)
     assert connection_manager.sent[-1][2]["type"] == "error"
     assert connection_manager.sent[-1][2]["payload"]["code"] == "INVALID_PARTICIPANT"
 
+
+async def test_disconnect_after_room_deletion_is_idempotent(session_factory):
+    room_service = RoomService()
+    connection_manager = FakeConnectionManager()
+    signaling_service = SignalingService(
+        room_service=room_service,
+        connection_manager=connection_manager,
+    )
+    async with session_factory() as session:
+        created = await room_service.create_room(session, username="Alice")
+        await room_service.leave_room(
+            session,
+            room_code=created.room_code,
+            participant_id=created.participant.participant_id,
+            participant_token=created.participant_token,
+        )
+        await signaling_service.handle_disconnect(
+            session,
+            room_code=created.room_code,
+            participant_id=created.participant.participant_id,
+        )
+
+    assert connection_manager.broadcasts == []

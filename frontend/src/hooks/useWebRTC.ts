@@ -154,7 +154,9 @@ export function useWebRTC({
   }, []);
 
   const createPeerConnection = useCallback(async () => {
+    const pendingCandidates = pendingCandidatesRef.current;
     cleanupPeerConnection("connecting");
+    pendingCandidatesRef.current = pendingCandidates;
     const iceServers = await getIceServersRef.current();
     const peerConnection = new RTCPeerConnection({ iceServers });
     const remoteStream = new MediaStream();

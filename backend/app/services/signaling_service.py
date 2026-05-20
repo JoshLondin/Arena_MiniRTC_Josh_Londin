@@ -6,7 +6,12 @@ from uuid import UUID
 from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.errors import AppError, CallAlreadyStartedError, InvalidParticipantError
+from app.core.errors import (
+    AppError,
+    CallAlreadyStartedError,
+    InvalidParticipantError,
+    RoomNotFoundError,
+)
 from app.services.room_service import RoomService, RoomStatePayload
 from app.websocket.connection_manager import ConnectionManager
 from app.websocket.schemas import (
@@ -268,11 +273,14 @@ class SignalingService:
         room_code: str,
         participant_id: UUID,
     ) -> None:
-        result = await self.room_service.mark_participant_disconnected(
-            session,
-            room_code=room_code,
-            participant_id=participant_id,
-        )
+        try:
+            result = await self.room_service.mark_participant_disconnected(
+                session,
+                room_code=room_code,
+                participant_id=participant_id,
+            )
+        except (InvalidParticipantError, RoomNotFoundError):
+            return
         if not result.changed:
             return
         await self.connection_manager.broadcast_room(
