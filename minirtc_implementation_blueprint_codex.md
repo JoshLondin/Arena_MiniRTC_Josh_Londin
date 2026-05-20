@@ -2689,6 +2689,34 @@ Owns media permissions and device errors:
 - returns STUN config.
 - omits TURN server when not configured.
 - returns TURN credentials only from backend endpoint.
+- returns both STUN and TURN entries when all TURN env vars are configured.
+
+### Config (NEW)
+
+- normalizes `postgres://` database URLs to `postgresql+asyncpg://`.
+- normalizes `postgresql://` database URLs to `postgresql+asyncpg://`.
+- preserves `postgresql+asyncpg://` database URLs unchanged.
+- parses comma-separated `CORS_ALLOWED_ORIGINS` into the backend CORS allowlist.
+
+### Frontend Room State (NEW)
+
+- derives `activeParticipantCount` from active room participants.
+- derives `currentParticipant` from current credentials.
+- derives `remoteParticipant` only when another active participant exists.
+- derives `canStartCall` only when exactly two active participants are present, signaling is connected, and call status is idle.
+- derives `canJoinCall` only for the non-host participant after the other participant starts a call.
+- derives `isLastParticipant` from active and reserved participant counts.
+
+### Frontend Hooks (NEW)
+
+- `useWebSocket` does not recreate the socket when React callback props change.
+- `useWebSocket` reconnects only on unexpected close codes.
+- `useWebSocket` treats invalid auth, room not found, and room deleted close codes as fatal.
+- `useWebRTC` lets the call host create the offer after the second participant joins the call.
+- `useWebRTC` adds local tracks before creating offers or answers.
+- `useWebRTC` queues ICE candidates until a remote description exists.
+- camera-off stops local video tracks instead of only hiding the video element.
+- camera-on reacquires a video track and updates the peer connection sender.
 
 ---
 
@@ -2701,6 +2729,8 @@ Owns media permissions and device errors:
 - POST /rooms/{room_code}/reconnect succeeds within timeout.
 - POST /rooms/{room_code}/delete with host_token deletes room.
 - GET /rooms/{room_code} after deletion returns 404.
+- end-to-end REST room lifecycle with test database: create room, join second user, reject third user, leave one participant, delete room as final participant.
+- reconnect lifecycle with test database: disconnect participant, reconnect through REST, and verify participant becomes ACTIVE again.
 
 ---
 
@@ -2716,6 +2746,43 @@ Owns media permissions and device errors:
 - websocket accepts a duplicate valid connection, closes the old socket with 4429, and keeps participant ACTIVE.
 - websocket sends error for second simultaneous start-call.
 - websocket broadcasts room-deleted before closing when room is deleted.
+- websocket two-client flow sends fresh `room-state` to both clients when Bob joins Alice.
+- websocket reconnect flow broadcasts repaired `room-state` to connected room participants.
+- websocket call flow forwards `call-started`, `call-joined`, `offer`, `answer`, and `ice-candidate` to the correct participant.
+
+---
+
+## End-to-End and Smoke Tests
+
+### Local Playwright Smoke Test
+
+Use two isolated browser contexts and mocked media APIs to avoid requiring real camera and microphone permissions in CI.
+
+Required scenarios:
+
+- Alice creates a room and sees herself in the participant list.
+- Bob joins through the copied room link and both browsers update participant lists without refresh.
+- Start Call is hidden with one active participant and visible with two active participants.
+- Alice starts the call and Bob sees Join Call.
+- Bob joins and both users see call controls.
+- mute and camera toggles update the local UI state.
+- a third browser context sees the room-full path.
+- leaving with two participants does not show the final-participant delete warning.
+
+### Deployment Smoke Test
+
+Run after Render deployment or after any production environment variable change.
+
+Required scenarios:
+
+- deployed frontend loads over HTTPS.
+- backend `/health` responds over HTTPS.
+- room creation succeeds against the deployed backend.
+- WebSocket signaling connects over WSS.
+- two deployed browser sessions can join the same room and exchange signaling events.
+- two-user call setup reaches the point where offer, answer, and ICE candidates are exchanged.
+- third joiner receives `ROOM_FULL`.
+- note any media failure on restrictive networks as a TURN requirement rather than a signaling failure.
 
 ---
 
@@ -3173,6 +3240,177 @@ README should instruct reviewers to test with:
 
 ---
 
+# Deployment Plan (Render)
+
+This project can be deployed on Render with a managed PostgreSQL database, a Dockerized FastAPI backend, and a Vite static frontend. The deployment should preserve the same public REST, WebSocket, and WebRTC behavior used locally while replacing local origins with HTTPS and WSS production URLs.
+
+## Deployment Technologies
+
+### Render Blueprint (`render.yaml`)
+
+Use a root-level `render.yaml` file to describe the production infrastructure in one place. The blueprint should define:
+
+- one Render PostgreSQL database;
+- one backend web service built from `backend/Dockerfile`;
+- one frontend static site built from the Vite app in `frontend`;
+- environment variables for backend secrets, database access, frontend API URLs, CORS, and optional TURN configuration.
+
+Suggested service names:
+
+```text
+arena-minirtc-josh-londin-db
+arena-minirtc-josh-londin-api
+arena-minirtc-josh-londin-web
+```
+
+If Render changes the final hostnames because a name is unavailable, update the production frontend and backend environment variables to match the actual Render URLs before final verification.
+
+### Render PostgreSQL
+
+Use Render PostgreSQL as the production database for rooms, participants, call state, and reconnect metadata. The backend should receive its database connection string through `DATABASE_URL`.
+
+Render may provide a URL that starts with `postgres://` or `postgresql://`. The backend should normalize those values to `postgresql+asyncpg://` before passing the URL to SQLAlchemy or Alembic. This keeps local development, migrations, and production startup on the same async PostgreSQL driver.
+
+### FastAPI Backend Web Service
+
+Deploy the backend as a Render web service using the existing backend Dockerfile. The container should:
+
+- install backend dependencies;
+- run `alembic upgrade head` during startup;
+- start `uvicorn app.main:app`;
+- bind to `0.0.0.0`;
+- use Render's dynamic port with `${PORT:-8000}`.
+
+The backend public origin should be:
+
+```text
+https://arena-minirtc-josh-londin-api.onrender.com
+```
+
+The backend WebSocket origin should be:
+
+```text
+wss://arena-minirtc-josh-londin-api.onrender.com
+```
+
+### Vite Frontend Static Site
+
+Deploy the frontend as a Render static site instead of running the Vite development server in production. The static site should use:
+
+```bash
+npm ci && npm run build
+```
+
+as the build command, with:
+
+```text
+dist
+```
+
+as the publish directory.
+
+The frontend public origin should be:
+
+```text
+https://arena-minirtc-josh-londin-web.onrender.com
+```
+
+### HTTPS and WSS
+
+Production browsers should communicate with the backend over HTTPS for REST and WSS for WebSocket signaling. The frontend should not use localhost defaults once deployed.
+
+Frontend production environment variables:
+
+```text
+VITE_API_BASE_URL=https://arena-minirtc-josh-londin-api.onrender.com
+VITE_WS_BASE_URL=wss://arena-minirtc-josh-londin-api.onrender.com
+```
+
+Backend production CORS should allow the deployed frontend origin:
+
+```text
+CORS_ALLOWED_ORIGINS=https://arena-minirtc-josh-londin-web.onrender.com
+```
+
+### STUN and TURN
+
+Use the existing STUN server setting for the initial deployment:
+
+```text
+STUN_SERVER_URL=stun:stun.l.google.com:19302
+```
+
+TURN should remain optional for the assignment deployment, but the deployment plan should keep the existing TURN environment variables wired:
+
+```text
+TURN_SERVER_URL=
+TURN_USERNAME=
+TURN_PASSWORD=
+```
+
+In a real production deployment, configure a TURN provider or coturn deployment and set these variables so users behind restrictive NATs can still connect media.
+
+## Required Backend Environment Variables
+
+```text
+DATABASE_URL=<Render Postgres internal connection string>
+TOKEN_HASH_SECRET=<random production secret stored in Render>
+CORS_ALLOWED_ORIGINS=https://arena-minirtc-josh-londin-web.onrender.com
+STUN_SERVER_URL=stun:stun.l.google.com:19302
+TURN_SERVER_URL=<optional TURN URL>
+TURN_USERNAME=<optional TURN username>
+TURN_PASSWORD=<optional TURN password>
+```
+
+The backend may continue to use its existing defaults for room code length, heartbeat interval, reconnect timeout, call timeout, and room cleanup timeout unless deployment verification shows Render needs different timing.
+
+## Required Frontend Environment Variables
+
+```text
+VITE_API_BASE_URL=https://arena-minirtc-josh-londin-api.onrender.com
+VITE_WS_BASE_URL=wss://arena-minirtc-josh-londin-api.onrender.com
+```
+
+These values are build-time Vite variables. If they change in Render, rebuild and redeploy the static site.
+
+## Deployment TODO
+
+1. Add a root `render.yaml` blueprint.
+2. Configure a Render PostgreSQL database for MiniRTC.
+3. Configure the backend Render web service from `backend/Dockerfile`.
+4. Update backend startup to bind to `${PORT:-8000}`.
+5. Normalize Render Postgres URLs to `postgresql+asyncpg://`.
+6. Configure backend environment variables for database access, token hashing, CORS, STUN, and optional TURN.
+7. Configure the frontend Render static site with `npm ci && npm run build` and publish path `dist`.
+8. Configure frontend environment variables for HTTPS REST and WSS signaling.
+9. Deploy through Render Blueprint from the GitHub repository.
+10. Confirm actual Render hostnames and update environment variables if Render generated different service URLs.
+11. Redeploy any service whose environment variables changed.
+12. Update README deployment notes after the deployed app is verified.
+
+## Deployment Verification
+
+Verify the deployment with the same user journey as local development:
+
+```text
+1. Open the deployed frontend over HTTPS.
+2. Create a room as Alice.
+3. Confirm the backend health endpoint responds over HTTPS.
+4. Confirm the room WebSocket connects over WSS and status becomes connected.
+5. Open the room link in a second browser and join as Bob.
+6. Confirm both users see live participant updates without refresh.
+7. Start the call from Alice and join from Bob.
+8. Confirm local and remote media streams appear for both users.
+9. Toggle mute and camera controls.
+10. Try a third joiner and verify ROOM_FULL.
+11. Leave from one participant and confirm the room remains open for the other participant.
+12. Leave as the final participant and verify the delete confirmation path.
+```
+
+If signaling works but media fails on some networks, document that the initial deployment is STUN-only and that production-grade reliability requires TURN.
+
+---
+
 # Implementation Order
 
 ## Phase 1: Backend Room Basics
@@ -3232,5 +3470,17 @@ README should instruct reviewers to test with:
 2. Write DECISIONS.md.
 3. Add Docker Compose.
 4. Add tests to CI.
-5. Add optional deployment last.
+5. Confirm local Docker and non-Docker setup instructions are accurate.
 
+## Phase 6: Deployment
+
+1. Add a root `render.yaml` blueprint.
+2. Configure Render PostgreSQL for MiniRTC.
+3. Configure the backend Render web service from `backend/Dockerfile`.
+4. Update backend startup to bind to `${PORT:-8000}`.
+5. Normalize Render Postgres URLs to `postgresql+asyncpg://`.
+6. Configure backend env vars: `DATABASE_URL`, `TOKEN_HASH_SECRET`, `CORS_ALLOWED_ORIGINS`, `STUN_SERVER_URL`, and optional TURN vars.
+7. Configure frontend Render static site with `npm ci && npm run build` and publish path `dist`.
+8. Configure frontend env vars: `VITE_API_BASE_URL` and `VITE_WS_BASE_URL`.
+9. Deploy through Render Blueprint.
+10. Verify backend health, frontend load, room creation, WSS connection, two-user call, room-full handling, and TURN caveat.
