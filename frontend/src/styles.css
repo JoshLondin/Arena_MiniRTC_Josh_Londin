@@ -139,6 +139,12 @@ label {
   gap: 18px;
 }
 
+.share-url-row {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .presence {
   display: grid;
   gap: 10px;

@@ -1,3 +1,5 @@
+import { useEffect, useRef, useState } from "react";
+
 import type { RoomState } from "../state/roomReducer";
 import { CallControls } from "./CallControls";
 import { ConnectionStatus } from "./ConnectionStatus";
@@ -22,6 +24,8 @@ export function RoomPage({
   onToggleMute,
   onToggleCamera
 }: RoomPageProps) {
+  const [hasCopiedShareUrl, setHasCopiedShareUrl] = useState(false);
+  const shareUrlInputRef = useRef<HTMLInputElement | null>(null);
   const shareUrl = `${location.origin}/room/${state.roomCode}`;
   const activeParticipants = state.participants.filter((participant) => participant.status === "ACTIVE");
   const currentParticipant =
@@ -45,6 +49,25 @@ export function RoomPage({
     state.participants.some((participant) => participant.status === "DISCONNECTED");
   const localLabel = currentParticipant?.username ?? state.username;
 
+  useEffect(() => {
+    if (!hasCopiedShareUrl) {
+      return;
+    }
+    const timeout = window.setTimeout(() => setHasCopiedShareUrl(false), 1800);
+    return () => window.clearTimeout(timeout);
+  }, [hasCopiedShareUrl]);
+
+  const copyShareUrl = async () => {
+    if (navigator.clipboard) {
+      await navigator.clipboard.writeText(shareUrl);
+      setHasCopiedShareUrl(true);
+      return;
+    }
+    shareUrlInputRef.current?.select();
+    document.execCommand("copy");
+    setHasCopiedShareUrl(true);
+  };
+
   return (
     <main className="room-shell">
       <header className="topbar">
@@ -59,7 +82,17 @@ export function RoomPage({
         <aside className="sidebar">
           <label>
             Share URL
-            <input value={shareUrl} readOnly onFocus={(event) => event.currentTarget.select()} />
+            <span className="share-url-row">
+              <input
+                ref={shareUrlInputRef}
+                value={shareUrl}
+                readOnly
+                onFocus={(event) => event.currentTarget.select()}
+              />
+              <button type="button" className="secondary" onClick={copyShareUrl}>
+                {hasCopiedShareUrl ? "Copied" : "Copy Room Link"}
+              </button>
+            </span>
           </label>
           <div className="presence">
             <h2>Participants</h2>
