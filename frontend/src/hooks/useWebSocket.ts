@@ -11,6 +11,7 @@ type UseWebSocketOptions = {
   onMessage: (message: ServerSignalingMessage) => void;
   onOpen?: () => void;
   onClose?: () => void;
+  onFatalClose?: () => void;
 };
 
 export function useWebSocket({
@@ -20,10 +21,22 @@ export function useWebSocket({
   enabled,
   onMessage,
   onOpen,
-  onClose
+  onClose,
+  onFatalClose
 }: UseWebSocketOptions) {
   const socketRef = useRef<WebSocket | null>(null);
   const heartbeatRef = useRef<number | null>(null);
+  const onMessageRef = useRef(onMessage);
+  const onOpenRef = useRef(onOpen);
+  const onCloseRef = useRef(onClose);
+  const onFatalCloseRef = useRef(onFatalClose);
+
+  useEffect(() => {
+    onMessageRef.current = onMessage;
+    onOpenRef.current = onOpen;
+    onCloseRef.current = onClose;
+    onFatalCloseRef.current = onFatalClose;
+  }, [onFatalClose, onClose, onMessage, onOpen]);
 
   const sendMessage = useCallback((message: ClientSignalingMessage) => {
     const socket = socketRef.current;
@@ -36,6 +49,7 @@ export function useWebSocket({
     if (!enabled || !roomCode || !participantId || !participantToken) {
       return;
     }
+    let intentionalClose = false;
     const params = new URLSearchParams({
       participant_id: participantId,
       participant_token: participantToken
@@ -44,32 +58,43 @@ export function useWebSocket({
     socketRef.current = socket;
 
     socket.onopen = () => {
-      onOpen?.();
+      onOpenRef.current?.();
       heartbeatRef.current = window.setInterval(() => {
         sendMessage({ type: "heartbeat", payload: { participant_id: participantId } });
       }, 10_000);
     };
 
     socket.onmessage = (event) => {
-      onMessage(JSON.parse(event.data) as ServerSignalingMessage);
+      onMessageRef.current(JSON.parse(event.data) as ServerSignalingMessage);
     };
 
-    socket.onclose = () => {
+    socket.onclose = (event) => {
       if (heartbeatRef.current !== null) {
         window.clearInterval(heartbeatRef.current);
         heartbeatRef.current = null;
       }
-      onClose?.();
+      if (intentionalClose) {
+        return;
+      }
+      if ([4401, 4404, 4410].includes(event.code)) {
+        onFatalCloseRef.current?.();
+        return;
+      }
+      onCloseRef.current?.();
     };
 
     return () => {
+      intentionalClose = true;
       if (heartbeatRef.current !== null) {
         window.clearInterval(heartbeatRef.current);
+        heartbeatRef.current = null;
       }
       socket.close();
-      socketRef.current = null;
+      if (socketRef.current === socket) {
+        socketRef.current = null;
+      }
     };
-  }, [enabled, onClose, onMessage, onOpen, participantId, participantToken, roomCode, sendMessage]);
+  }, [enabled, participantId, participantToken, roomCode, sendMessage]);
 
   return { sendMessage };
 }

@@ -61,6 +61,10 @@ class SignalingService:
             message=self._event("room-state", self._room_state_payload(state)),
         )
 
+    async def broadcast_current_room_state(self, session: AsyncSession, *, room_code: str) -> None:
+        state = await self.room_service.get_room_state_payload(session, room_code=room_code)
+        await self.broadcast_room_state(room_code=room_code, state=state)
+
     async def handle_raw_message(
         self,
         session: AsyncSession,

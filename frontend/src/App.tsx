@@ -7,6 +7,7 @@ import { clearCredentials, loadCredentials, saveCredentials, useRoom } from "./h
 import { useWebRTC } from "./hooks/useWebRTC";
 import { useWebSocket } from "./hooks/useWebSocket";
 import { initialRoomState, roomReducer } from "./state/roomReducer";
+import type { MediaStatus } from "./state/roomReducer";
 import type { ClientSignalingMessage, RoomCredentials, ServerSignalingMessage } from "./types/signaling";
 
 function roomCodeFromPath(): string | null {
@@ -44,6 +45,12 @@ export function App() {
     if (message.type === "room-state") {
       dispatch({ type: "ROOM_STATE_RECEIVED", payload: message.payload });
     }
+    if (message.type === "participant-joined") {
+      dispatch({ type: "PARTICIPANT_JOINED", payload: message.payload });
+    }
+    if (message.type === "participant-left") {
+      dispatch({ type: "PARTICIPANT_LEFT", payload: message.payload });
+    }
     if (message.type === "participant-disconnected") {
       dispatch({ type: "PARTICIPANT_DISCONNECTED", payload: message.payload });
     }
@@ -76,12 +83,9 @@ export function App() {
     dispatch({ type: "SET_REMOTE_STREAM", payload: stream });
   }, []);
 
-  const handlePeerConnectionState = useCallback(
-    (status: "idle" | "connecting" | "connected" | "reconnecting" | "failed") => {
-      dispatch({ type: "SET_CONNECTION_STATUS", payload: status });
-    },
-    []
-  );
+  const handleMediaStatus = useCallback((status: MediaStatus) => {
+    dispatch({ type: "SET_MEDIA_STATUS", payload: status });
+  }, []);
 
   const handleMediaWarning = useCallback((warning: string | null) => {
     dispatch({ type: "SET_MEDIA_WARNING", payload: warning });
@@ -94,7 +98,7 @@ export function App() {
     getIceServers,
     onLocalStream: handleLocalStream,
     onRemoteStream: handleRemoteStream,
-    onConnectionState: handlePeerConnectionState,
+    onMediaStatus: handleMediaStatus,
     onWarning: handleMediaWarning
   });
 
@@ -102,7 +106,7 @@ export function App() {
     async (message: ServerSignalingMessage) => {
       handleServerMessage(message);
       if (message.type === "call-joined") {
-        await webRtc.beginNegotiation();
+        await webRtc.beginNegotiation(message.payload.call_host_participant_id);
       }
       if (message.type === "offer") {
         await webRtc.handleOffer(message.payload.sdp);
@@ -113,7 +117,11 @@ export function App() {
       if (message.type === "ice-candidate") {
         await webRtc.handleIceCandidate(message.payload);
       }
-      if (message.type === "call-ended" || message.type === "room-deleted") {
+      if (
+        message.type === "call-ended" ||
+        message.type === "room-deleted" ||
+        (message.type === "participant-left" && message.payload.call_ended)
+      ) {
         webRtc.cleanupPeerConnection();
         webRtc.stopMedia();
       }
@@ -129,6 +137,13 @@ export function App() {
     dispatch({ type: "SET_CONNECTION_STATUS", payload: "reconnecting" });
   }, []);
 
+  const handleSocketFatalClose = useCallback(() => {
+    clearCredentials();
+    setIsSessionReady(false);
+    setCredentials(null);
+    dispatch({ type: "SET_CONNECTION_STATUS", payload: "failed" });
+  }, []);
+
   const socket = useWebSocket({
     roomCode: credentials?.roomCode ?? null,
     participantId: credentials?.participantId ?? null,
@@ -136,7 +151,8 @@ export function App() {
     enabled: credentials !== null && isSessionReady,
     onMessage,
     onOpen: handleSocketOpen,
-    onClose: handleSocketClose
+    onClose: handleSocketClose,
+    onFatalClose: handleSocketFatalClose
   });
 
   useEffect(() => {
@@ -158,6 +174,7 @@ export function App() {
         }
         if (result.must_restart_peer_connection) {
           webRtc.cleanupPeerConnection();
+          webRtc.stopMedia();
         }
         setIsSessionReady(true);
       })
@@ -198,6 +215,7 @@ export function App() {
   );
 
   const prepareMedia = useCallback(async () => {
+    dispatch({ type: "SET_MEDIA_STATUS", payload: "preparing" });
     const media = await mediaDevices.getCallMedia();
     webRtc.attachLocalStream(media.stream, media.warning);
   }, [mediaDevices, webRtc]);
@@ -207,6 +225,7 @@ export function App() {
       await prepareMedia();
       socket.sendMessage({ type: "start-call", payload: { participant_id: state.participantId } });
     } catch (error) {
+      dispatch({ type: "SET_MEDIA_STATUS", payload: "failed" });
       dispatch({ type: "SET_ERROR", payload: error instanceof Error ? error.message : "Media failed." });
     }
   }, [prepareMedia, socket, state.participantId]);
@@ -216,6 +235,7 @@ export function App() {
       await prepareMedia();
       socket.sendMessage({ type: "join-call", payload: { participant_id: state.participantId } });
     } catch (error) {
+      dispatch({ type: "SET_MEDIA_STATUS", payload: "failed" });
       dispatch({ type: "SET_ERROR", payload: error instanceof Error ? error.message : "Media failed." });
     }
   }, [prepareMedia, socket, state.participantId]);
@@ -230,7 +250,8 @@ export function App() {
     if (!credentials) {
       return;
     }
-    const isFinalParticipant = state.reservedParticipantCount <= 1;
+    const activeParticipantCount = state.participants.filter((participant) => participant.status === "ACTIVE").length;
+    const isFinalParticipant = state.reservedParticipantCount <= 1 && activeParticipantCount <= 1;
     if (isFinalParticipant) {
       const confirmed = confirm("You're the last person in the room. Leaving it will close the room.");
       if (!confirmed) {
@@ -258,10 +279,9 @@ export function App() {
         onLeaveRoom={leaveCurrentRoom}
         onToggleMute={() => dispatch({ type: "SET_MUTED", payload: !state.isMuted })}
         onToggleCamera={() => dispatch({ type: "SET_CAMERA_ENABLED", payload: !state.isCameraEnabled })}
-        sendMessage={socket.sendMessage}
       />
     );
-  }, [credentials, joinCall, leaveCall, leaveCurrentRoom, socket.sendMessage, startCall, state]);
+  }, [credentials, joinCall, leaveCall, leaveCurrentRoom, startCall, state]);
 
   if (roomPage) {
     return roomPage;

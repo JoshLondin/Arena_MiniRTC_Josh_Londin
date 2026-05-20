@@ -56,6 +56,7 @@ async def room_websocket(
             room_code=room_code,
             participant_id=parsed_participant_id,
         )
+        await signaling_service.broadcast_current_room_state(session, room_code=room_code)
 
     try:
         while True:

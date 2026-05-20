@@ -1,4 +1,3 @@
-import type { ClientSignalingMessage } from "../types/signaling";
 import type { RoomState } from "../state/roomReducer";
 import { CallControls } from "./CallControls";
 import { ConnectionStatus } from "./ConnectionStatus";
@@ -12,7 +11,6 @@ type RoomPageProps = {
   onLeaveRoom: () => Promise<void>;
   onToggleMute: () => void;
   onToggleCamera: () => void;
-  sendMessage: (message: ClientSignalingMessage) => void;
 };
 
 export function RoomPage({
@@ -25,14 +23,27 @@ export function RoomPage({
   onToggleCamera
 }: RoomPageProps) {
   const shareUrl = `${location.origin}/room/${state.roomCode}`;
+  const activeParticipants = state.participants.filter((participant) => participant.status === "ACTIVE");
+  const currentParticipant =
+    state.participants.find((participant) => participant.participant_id === state.participantId) ?? null;
+  const remoteParticipant =
+    state.participants.find((participant) => participant.participant_id !== state.participantId) ?? null;
   const isCallHost = state.callHostParticipantId === state.participantId;
+  const hasLocalMedia = state.localStream !== null;
   const showJoinCall =
-    state.callStatus === "CALL_PENDING" && state.callHostParticipantId !== state.participantId;
-  const showStartCall = state.callStatus === "IDLE";
+    state.connectionStatus === "connected" &&
+    state.callStatus === "CALL_PENDING" &&
+    state.callHostParticipantId !== state.participantId &&
+    !hasLocalMedia;
+  const showStartCall =
+    state.connectionStatus === "connected" &&
+    state.callStatus === "IDLE" &&
+    activeParticipants.length === state.capacity;
   const hasCamera = (state.localStream?.getVideoTracks().length ?? 0) > 0;
   const someoneReconnecting =
     state.reservedParticipantCount === 2 &&
     state.participants.some((participant) => participant.status === "DISCONNECTED");
+  const localLabel = currentParticipant?.username ?? state.username;
 
   return (
     <main className="room-shell">
@@ -67,9 +78,11 @@ export function RoomPage({
         </aside>
 
         <section className="call-surface">
-          <div className="video-grid">
-            <VideoPanel label="You" stream={state.localStream} muted />
-            <VideoPanel label="Remote" stream={state.remoteStream} />
+          <div className={remoteParticipant ? "video-grid" : "video-grid video-grid-single"}>
+            <VideoPanel label={localLabel} stream={state.localStream} muted />
+            {remoteParticipant ? (
+              <VideoPanel label={remoteParticipant.username} stream={state.remoteStream} />
+            ) : null}
           </div>
 
           <div className="call-actions">
@@ -83,7 +96,7 @@ export function RoomPage({
                 Join Call
               </button>
             ) : null}
-            {state.callStatus !== "IDLE" ? (
+            {hasLocalMedia && state.callStatus !== "IDLE" ? (
               <CallControls
                 isMuted={state.isMuted}
                 isCameraEnabled={state.isCameraEnabled}
@@ -98,8 +111,11 @@ export function RoomPage({
                 Leave Room
               </button>
             )}
-            {state.callStatus !== "IDLE" ? (
-              <p className="subtle">{isCallHost ? "You started this call." : "You joined this call."}</p>
+            {hasLocalMedia && state.callStatus !== "IDLE" ? (
+              <p className="subtle">
+                {isCallHost ? "You started this call." : "You joined this call."} Media:{" "}
+                {state.mediaStatus}
+              </p>
             ) : null}
           </div>
         </section>
@@ -107,4 +123,3 @@ export function RoomPage({
     </main>
   );
 }
-

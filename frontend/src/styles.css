@@ -173,6 +173,10 @@ label {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.video-grid-single {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .video-panel {
   aspect-ratio: 16 / 10;
   background: #0f172a;
@@ -247,4 +251,3 @@ label {
     grid-template-columns: 1fr;
   }
 }
-

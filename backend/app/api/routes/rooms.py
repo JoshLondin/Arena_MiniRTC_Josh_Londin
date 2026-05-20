@@ -132,6 +132,8 @@ async def reconnect_room(
         participant_id=request.participant_id,
         participant_token=request.participant_token,
     )
+    state = await room_service.get_room_state_payload(session, room_code=room_code)
+    await signaling_service.broadcast_room_state(room_code=room_code, state=state)
     return ReconnectResponse.model_validate(result, from_attributes=True)
 
 
