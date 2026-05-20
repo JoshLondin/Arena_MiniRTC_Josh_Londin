@@ -190,9 +190,6 @@ export function roomReducer(state: RoomState, action: RoomAction): RoomState {
       });
       return { ...state, isMuted: action.payload };
     case "SET_CAMERA_ENABLED":
-      state.localStream?.getVideoTracks().forEach((track) => {
-        track.enabled = action.payload;
-      });
       return { ...state, isCameraEnabled: action.payload };
     case "SET_LOCAL_STREAM":
       return { ...state, localStream: action.payload };

@@ -218,6 +218,7 @@ export function App() {
     dispatch({ type: "SET_MEDIA_STATUS", payload: "preparing" });
     const media = await mediaDevices.getCallMedia();
     webRtc.attachLocalStream(media.stream, media.warning);
+    dispatch({ type: "SET_CAMERA_ENABLED", payload: media.stream.getVideoTracks().length > 0 });
   }, [mediaDevices, webRtc]);
 
   const startCall = useCallback(async () => {
@@ -266,6 +267,25 @@ export function App() {
     history.pushState(null, "", "/");
   }, [credentials, roomApi, state.reservedParticipantCount, webRtc]);
 
+  const toggleCamera = useCallback(async () => {
+    if (state.isCameraEnabled) {
+      await webRtc.disableCamera();
+      dispatch({ type: "SET_CAMERA_ENABLED", payload: false });
+      return;
+    }
+    try {
+      const track = await mediaDevices.getVideoTrack();
+      await webRtc.enableCamera(track);
+      dispatch({ type: "SET_CAMERA_ENABLED", payload: true });
+      dispatch({ type: "SET_MEDIA_WARNING", payload: null });
+    } catch (error) {
+      dispatch({
+        type: "SET_ERROR",
+        payload: error instanceof Error ? error.message : "Camera is unavailable."
+      });
+    }
+  }, [mediaDevices, state.isCameraEnabled, webRtc]);
+
   const roomPage = useMemo(() => {
     if (!credentials) {
       return null;
@@ -278,10 +298,10 @@ export function App() {
         onLeaveCall={leaveCall}
         onLeaveRoom={leaveCurrentRoom}
         onToggleMute={() => dispatch({ type: "SET_MUTED", payload: !state.isMuted })}
-        onToggleCamera={() => dispatch({ type: "SET_CAMERA_ENABLED", payload: !state.isCameraEnabled })}
+        onToggleCamera={toggleCamera}
       />
     );
-  }, [credentials, joinCall, leaveCall, leaveCurrentRoom, startCall, state]);
+  }, [credentials, joinCall, leaveCall, leaveCurrentRoom, startCall, state, toggleCamera]);
 
   if (roomPage) {
     return roomPage;

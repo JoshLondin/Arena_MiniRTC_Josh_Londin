@@ -23,6 +23,15 @@ export function useMediaDevices() {
     }
   }, []);
 
-  return { getCallMedia };
-}
+  const getVideoTrack = useCallback(async (): Promise<MediaStreamTrack> => {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: true });
+    const [track] = stream.getVideoTracks();
+    if (!track) {
+      stream.getTracks().forEach((streamTrack) => streamTrack.stop());
+      throw new Error("Camera is unavailable.");
+    }
+    return track;
+  }, []);
 
+  return { getCallMedia, getVideoTrack };
+}

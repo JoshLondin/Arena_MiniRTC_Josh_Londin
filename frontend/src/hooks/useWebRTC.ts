@@ -27,6 +27,7 @@ export function useWebRTC({
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
   const remoteStreamRef = useRef<MediaStream | null>(null);
+  const videoSenderRef = useRef<RTCRtpSender | null>(null);
   const pendingCandidatesRef = useRef<RTCIceCandidateInit[]>([]);
   const sentMediaConnectedRef = useRef(false);
   const credentialsRef = useRef(credentials);
@@ -72,6 +73,7 @@ export function useWebRTC({
   const cleanupPeerConnection = useCallback((nextStatus: MediaStatus = "idle") => {
     peerConnectionRef.current?.close();
     peerConnectionRef.current = null;
+    videoSenderRef.current = null;
     remoteStreamRef.current = null;
     pendingCandidatesRef.current = [];
     sentMediaConnectedRef.current = false;
@@ -82,6 +84,7 @@ export function useWebRTC({
   const stopMedia = useCallback(() => {
     localStreamRef.current?.getTracks().forEach((track) => track.stop());
     localStreamRef.current = null;
+    videoSenderRef.current = null;
     onLocalStreamRef.current(null);
     onWarningRef.current(null);
   }, []);
@@ -98,10 +101,49 @@ export function useWebRTC({
           .getSenders()
           .some((sender) => sender.track?.id === track.id);
         if (!alreadyAdded) {
-          peerConnection.addTrack(track, stream);
+          const sender = peerConnection.addTrack(track, stream);
+          if (track.kind === "video") {
+            videoSenderRef.current = sender;
+          }
         }
       });
     }
+  }, []);
+
+  const disableCamera = useCallback(async () => {
+    const stream = localStreamRef.current;
+    if (!stream) {
+      return;
+    }
+    const videoTracks = stream.getVideoTracks();
+    await videoSenderRef.current?.replaceTrack(null);
+    videoTracks.forEach((track) => {
+      stream.removeTrack(track);
+      track.stop();
+    });
+    onLocalStreamRef.current(new MediaStream(stream.getTracks()));
+  }, []);
+
+  const enableCamera = useCallback(async (track: MediaStreamTrack) => {
+    let stream = localStreamRef.current;
+    if (!stream) {
+      stream = new MediaStream();
+      localStreamRef.current = stream;
+    }
+    stream.getVideoTracks().forEach((existingTrack) => {
+      stream.removeTrack(existingTrack);
+      existingTrack.stop();
+    });
+    stream.addTrack(track);
+    const peerConnection = peerConnectionRef.current;
+    if (peerConnection) {
+      if (videoSenderRef.current) {
+        await videoSenderRef.current.replaceTrack(track);
+      } else {
+        videoSenderRef.current = peerConnection.addTrack(track, stream);
+      }
+    }
+    onLocalStreamRef.current(new MediaStream(stream.getTracks()));
   }, []);
 
   const flushPendingCandidates = useCallback(async (peerConnection: RTCPeerConnection) => {
@@ -120,7 +162,10 @@ export function useWebRTC({
     onRemoteStreamRef.current(remoteStream);
 
     localStreamRef.current?.getTracks().forEach((track) => {
-      peerConnection.addTrack(track, localStreamRef.current as MediaStream);
+      const sender = peerConnection.addTrack(track, localStreamRef.current as MediaStream);
+      if (track.kind === "video") {
+        videoSenderRef.current = sender;
+      }
     });
 
     peerConnection.onicecandidate = (event) => {
@@ -217,6 +262,8 @@ export function useWebRTC({
   return useMemo(
     () => ({
       attachLocalStream,
+      disableCamera,
+      enableCamera,
       beginNegotiation,
       cleanupPeerConnection,
       stopMedia,
@@ -228,6 +275,8 @@ export function useWebRTC({
       attachLocalStream,
       beginNegotiation,
       cleanupPeerConnection,
+      disableCamera,
+      enableCamera,
       handleAnswer,
       handleIceCandidate,
       handleOffer,

@@ -22,7 +22,7 @@ export function CallControls({
       <button type="button" onClick={onToggleMute}>
         {isMuted ? "Unmute" : "Mute"}
       </button>
-      <button type="button" onClick={onToggleCamera} disabled={!hasCamera}>
+      <button type="button" onClick={onToggleCamera} disabled={isCameraEnabled && !hasCamera}>
         {isCameraEnabled ? "Camera Off" : "Camera On"}
       </button>
       <button type="button" onClick={onLeaveCall}>
@@ -34,4 +34,3 @@ export function CallControls({
     </div>
   );
 }
-
