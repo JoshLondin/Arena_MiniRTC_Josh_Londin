@@ -214,15 +214,19 @@ diagnostics.
 
 **Decision:** The backend exposes an authenticated ICE server endpoint. It
 always returns STUN configuration and includes TURN only when TURN settings are
-configured.
+configured. TURN support is implemented in the application, but the take-home
+deployment intentionally leaves TURN unconfigured.
 
 **Why:** This keeps the frontend free of hard-coded TURN credentials and makes
 local development cheap. The same endpoint can later issue short-lived TURN
-credentials.
+credentials. For the take-home, provisioning a real TURN service is not required
+to demonstrate the core room, signaling, and 1:1 WebRTC flow; it is an
+operational production concern with direct bandwidth cost.
 
 **Tradeoff:** STUN-only WebRTC will fail on restrictive networks. Static TURN
 credentials are also not production-grade because they are hard to rotate and
-hard to limit per user or room.
+hard to limit per user or room. A production deployment should configure managed
+TURN or coturn, preferably with short-lived credentials and usage monitoring.
 
 ## Technologies
 
@@ -517,13 +521,16 @@ working network path. TURN relays media when direct connectivity fails.
 
 **How MiniRTC uses it:** The backend returns ICE server config from
 `/rooms/{room_code}/ice-servers`. STUN is always available by config, and TURN
-can be added by environment variables.
+can be added by environment variables. This means the TURN path is implemented
+and tested in the app, while the current take-home deployment runs with STUN
+only.
 
 The endpoint is authenticated with participant credentials, which keeps ICE
 configuration tied to valid room membership. In the local build, static config
 is enough. In production, this same endpoint is the natural place to mint
 short-lived TURN credentials, choose regional ICE servers, and enforce usage
-limits.
+limits. Leaving TURN blank for the take-home avoids provisioning a paid or
+self-hosted relay service while still documenting exactly where it plugs in.
 
 #### <u>Docker Compose</u>
 
