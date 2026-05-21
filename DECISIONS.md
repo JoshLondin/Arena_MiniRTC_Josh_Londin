@@ -761,6 +761,11 @@ rate-limiting, abuse controls, WSS/HTTPS deployment details, message
 backpressure handling, and multi-region routing. Those are acceptable omissions
 for the take-home build but would be the next things to harden.
 
+The current Render deployment is intentionally sized for review rather than
+scale. Free web services can cold start, the free Postgres instance has
+lifecycle limits, and the single deployed backend instance still has the same
+in-memory WebSocket fanout constraint as local development.
+
 #### <u>How We Would Scale The Product</u>
 
 Run REST and WebSocket workers as stateless services behind a load balancer, but
@@ -783,6 +788,9 @@ Add metrics for room create/join failures, `ROOM_FULL`, reconnect success rate,
 WebSocket close codes, call-start-to-IN_CALL time, ICE failure rate, TURN relay
 ratio, TURN bandwidth, and cleanup lag. Those metrics would tell us whether the
 system is failing because of app logic, network traversal, or infrastructure.
+Render logs are useful for the take-home deployment, but production would need
+structured logs, metrics, alerting, and dashboards outside the basic deploy log
+view.
 
 ### Cost
 
@@ -806,6 +814,12 @@ Expire unused rooms aggressively. Keep room TTLs short, clean stale disconnected
 participants, delete empty rooms, and avoid storing media. Autoscale WebSocket
 workers up and down based on concurrent connections instead of over-provisioning
 for peak daily room count.
+
+The static frontend is the cheapest part of the deployed architecture. The main
+cost drivers are long-lived backend WebSocket capacity, Postgres write volume
+from presence and cleanup, paid database sizing, and any TURN-relayed media.
+The take-home Render deployment keeps those costs low by using one small backend
+service, a free database, static hosting, and no provisioned TURN relay.
 
 #### <u>What You'd Do About NAT Traversal (TURN) In Real Life</u>
 
