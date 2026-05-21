@@ -119,6 +119,25 @@ devices.
 fail if permissions or devices change. Keeping a disabled track would be simpler
 and faster, but it would keep the camera active.
 
+#### <u>Participant Media Indicators Over Signaling</u>
+
+**Decision:** The video panel shows speaker and muted speaker icons for the
+current participant and broadcasts ephemeral mute/camera state over WebSocket so
+the remote tile can show the other participant's current media state after the
+local user has joined the call.
+
+**Why:** Users need clear feedback about their own mute and camera state,
+especially when camera-off stops the video track and leaves the tile otherwise
+empty. Broadcasting this lightweight state also makes the remote participant's
+tile feel more truthful once both users are in the call, without adding database
+schema or REST response changes.
+
+**Tradeoff:** The broadcast is intentionally live and ephemeral. It repairs on
+toggle, media start/join, reconnect, and room-state changes, but it is not
+stored as durable room state. A production experience could persist media state,
+include it in room-state snapshots, or add richer device/presence events so
+refreshes and late joins always receive an authoritative value immediately.
+
 ### Backend
 
 #### <u>REST For Room Lifecycle, WebSocket For Signaling</u>
@@ -322,6 +341,12 @@ peer-connection lifecycle. `useReducer` keeps room state transitions in one
 place so call events, participant events, socket state, and media state update
 predictably.
 
+The room reducer also stores a per-participant media-state map for live
+mute/camera indicators. `RoomPage` derives tile display modes from that state:
+idle rooms show centered participant names, started calls show waiting copy such
+as "Bob has not joined the call" until both users join, and active calls show
+video with local and remote media indicators.
+
 #### <u>TypeScript</u>
 
 **What it is:** [TypeScript](https://www.typescriptlang.org/docs/) adds static
@@ -377,9 +402,9 @@ for authenticated room operations.
 opens a persistent two-way connection between the browser and server.
 
 **How MiniRTC uses it:** MiniRTC uses one WebSocket per room participant for
-heartbeats, presence events, call events, SDP offers/answers, and ICE candidate
-forwarding. The hook stores callbacks in refs so normal React re-renders do not
-tear down a live socket.
+heartbeats, presence events, call events, SDP offers/answers, ICE candidate
+forwarding, and ephemeral participant media-state updates. The hook stores
+callbacks in refs so normal React re-renders do not tear down a live socket.
 
 The socket URL includes the room code, participant ID, and participant token.
 Once open, the client sends heartbeat messages every 10 seconds so the backend
@@ -387,6 +412,12 @@ can detect stale tabs. The hook treats close codes for invalid credentials,
 missing rooms, and duplicate connections as fatal, while unexpected closes move
 the UI into reconnecting state. This separation is what keeps the room status
 accurate while participant and media updates continue to flow through React.
+
+For mute and camera indicators, the current participant sends `media-state`
+messages whenever local media starts, reconnects, or changes. The backend
+validates that the sender can only report their own participant ID and forwards
+`participant-media-state` to the other socket. This keeps the remote video tile
+accurate during the live session without adding database persistence.
 
 #### <u>WebRTC APIs</u>
 

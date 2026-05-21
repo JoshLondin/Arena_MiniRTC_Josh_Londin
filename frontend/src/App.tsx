@@ -55,6 +55,9 @@ export function App() {
     if (message.type === "participant-disconnected") {
       dispatch({ type: "PARTICIPANT_DISCONNECTED", payload: message.payload });
     }
+    if (message.type === "participant-media-state") {
+      dispatch({ type: "PARTICIPANT_MEDIA_STATE", payload: message.payload });
+    }
     if (message.type === "call-started") {
       dispatch({ type: "CALL_STARTED", payload: message.payload });
     }
@@ -143,6 +146,7 @@ export function App() {
     setIsSessionReady(false);
     setCredentials(null);
     dispatch({ type: "SET_CONNECTION_STATUS", payload: "failed" });
+    dispatch({ type: "CLEAR_PARTICIPANT_MEDIA_STATES" });
   }, []);
 
   const socket = useWebSocket({
@@ -159,6 +163,34 @@ export function App() {
   useEffect(() => {
     setSendMessage(() => socket.sendMessage);
   }, [socket.sendMessage]);
+
+  useEffect(() => {
+    if (
+      state.connectionStatus !== "connected" ||
+      state.callStatus === "IDLE" ||
+      !state.localStream ||
+      !state.participantId
+    ) {
+      return;
+    }
+    socket.sendMessage({
+      type: "media-state",
+      payload: {
+        participant_id: state.participantId,
+        is_muted: state.isMuted,
+        is_camera_enabled: state.isCameraEnabled
+      }
+    });
+  }, [
+    socket.sendMessage,
+    state.callStatus,
+    state.connectionStatus,
+    state.isCameraEnabled,
+    state.isMuted,
+    state.localStream,
+    state.participantId,
+    state.participants
+  ]);
 
   useEffect(() => {
     let cancelled = false;

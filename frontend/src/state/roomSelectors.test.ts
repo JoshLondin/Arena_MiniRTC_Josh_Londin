@@ -29,6 +29,7 @@ function makeRoomState(overrides: Partial<RoomState> = {}): RoomState {
     mediaStatus: "idle",
     isMuted: false,
     isCameraEnabled: true,
+    participantMediaStates: {},
     localStream: null,
     remoteStream: null,
     mediaWarning: null,

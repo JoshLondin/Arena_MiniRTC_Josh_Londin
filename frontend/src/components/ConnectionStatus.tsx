@@ -1,15 +1,16 @@
-import type { ConnectionStatus as ConnectionStatusValue } from "../state/roomReducer";
+import type { ConnectionStatus as ConnectionStatusValue, MediaStatus } from "../state/roomReducer";
 
 type ConnectionStatusProps = {
-  status: ConnectionStatusValue;
+  label?: string;
+  status: ConnectionStatusValue | MediaStatus;
 };
 
-export function ConnectionStatus({ status }: ConnectionStatusProps) {
+export function ConnectionStatus({ label, status }: ConnectionStatusProps) {
   return (
     <span className={`status status-${status}`}>
-      <span aria-hidden="true" />
+      <span className="status-dot" aria-hidden="true" />
+      {label ? `${label}: ` : null}
       {status}
     </span>
   );
 }
-

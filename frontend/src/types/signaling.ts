@@ -16,6 +16,11 @@ export type Participant = {
   is_room_host?: boolean;
 };
 
+export type ParticipantMediaState = {
+  isMuted: boolean;
+  isCameraEnabled: boolean;
+};
+
 export type RoomStatePayload = {
   room_status: RoomStatus;
   reserved_participant_count: number;
@@ -31,6 +36,10 @@ export type ClientSignalingMessage =
   | { type: "join-call"; payload: { participant_id?: string } }
   | { type: "end-call"; payload: { participant_id?: string } }
   | { type: "media-connected"; payload: { participant_id?: string } }
+  | {
+      type: "media-state";
+      payload: { participant_id?: string; is_muted: boolean; is_camera_enabled: boolean };
+    }
   | { type: "offer"; payload: { sdp: RTCSessionDescriptionInit } }
   | { type: "answer"; payload: { sdp: RTCSessionDescriptionInit } }
   | { type: "ice-candidate"; payload: RTCIceCandidateInit };
@@ -52,6 +61,10 @@ export type ServerSignalingMessage =
   | {
       type: "participant-reconnected";
       payload: { participant_id: string; must_restart_peer_connection: boolean };
+    }
+  | {
+      type: "participant-media-state";
+      payload: { participant_id: string; is_muted: boolean; is_camera_enabled: boolean };
     }
   | {
       type: "call-started";
@@ -85,4 +98,3 @@ export type RoomCredentials = {
   hostToken?: string;
   username: string;
 };
-

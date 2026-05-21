@@ -37,13 +37,30 @@ export function RoomPage({
   const remoteParticipant = selectRemoteParticipant(state);
   const isCallHost = state.callHostParticipantId === state.participantId;
   const hasLocalMedia = state.localStream !== null;
+  const isCallStarted = state.callStatus !== "IDLE";
   const showJoinCall = selectCanJoinCall(state);
   const showStartCall = selectCanStartCall(state);
   const hasCamera = (state.localStream?.getVideoTracks().length ?? 0) > 0;
+  const remoteMediaState = remoteParticipant
+    ? state.participantMediaStates[remoteParticipant.participant_id]
+    : undefined;
+  const localLabel = currentParticipant?.username ?? state.username;
+  const isRemoteInCall =
+    remoteParticipant !== null &&
+    isCallStarted &&
+    (remoteParticipant.participant_id === state.callHostParticipantId || remoteMediaState !== undefined);
+  const localCenterLabel = !isCallStarted || !hasLocalMedia ? localLabel : undefined;
+  const remoteCenterLabel =
+    remoteParticipant && (!isCallStarted || !isRemoteInCall || !hasLocalMedia)
+      ? !isCallStarted
+        ? remoteParticipant.username
+        : isRemoteInCall
+          ? `${remoteParticipant.username} is in the call`
+          : `${remoteParticipant.username} has not joined the call`
+      : undefined;
   const someoneReconnecting =
     state.reservedParticipantCount === 2 &&
     state.participants.some((participant) => participant.status === "DISCONNECTED");
-  const localLabel = currentParticipant?.username ?? state.username;
 
   useEffect(() => {
     if (!hasCopiedShareUrl) {
@@ -71,7 +88,7 @@ export function RoomPage({
           <p className="eyebrow">MiniRTC</p>
           <h1>Room {state.roomCode}</h1>
         </div>
-        <ConnectionStatus status={state.connectionStatus} />
+        <ConnectionStatus label="Room" status={state.connectionStatus} />
       </header>
 
       <section className="workspace">
@@ -108,13 +125,28 @@ export function RoomPage({
 
         <section className="call-surface">
           <div className={remoteParticipant ? "video-grid" : "video-grid video-grid-single"}>
-            <VideoPanel label={localLabel} stream={state.localStream} muted />
+            <VideoPanel
+              label={localLabel}
+              stream={state.localStream}
+              isCameraEnabled={state.isCameraEnabled}
+              isMuted={state.isMuted}
+              muted
+              showAudioIndicator={hasLocalMedia}
+              centerLabel={localCenterLabel}
+            />
             {remoteParticipant ? (
-              <VideoPanel label={remoteParticipant.username} stream={state.remoteStream} />
+              <VideoPanel
+                label={remoteParticipant.username}
+                stream={state.remoteStream}
+                isCameraEnabled={remoteMediaState?.isCameraEnabled ?? true}
+                isMuted={remoteMediaState?.isMuted ?? false}
+                showAudioIndicator={hasLocalMedia && remoteMediaState !== undefined}
+                centerLabel={remoteCenterLabel}
+              />
             ) : null}
           </div>
 
-          <div className="call-actions">
+          <div className={remoteParticipant ? "call-actions" : "call-actions call-actions-single"}>
             {showStartCall ? (
               <button type="button" onClick={onStartCall}>
                 Start Call
@@ -141,10 +173,10 @@ export function RoomPage({
               </button>
             )}
             {hasLocalMedia && state.callStatus !== "IDLE" ? (
-              <p className="subtle">
-                {isCallHost ? "You started this call." : "You joined this call."} Media:{" "}
-                {state.mediaStatus}
-              </p>
+              <div className="call-status-row">
+                <span className="subtle">{isCallHost ? "You started this call." : "You joined this call."}</span>
+                <ConnectionStatus label="Call" status={state.mediaStatus} />
+              </div>
             ) : null}
           </div>
         </section>

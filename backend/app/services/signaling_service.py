@@ -21,6 +21,7 @@ from app.websocket.schemas import (
     IceCandidatePayload,
     JoinCallPayload,
     MediaConnectedPayload,
+    MediaStatePayload,
     OfferPayload,
     StartCallPayload,
     WebSocketMessage,
@@ -181,6 +182,28 @@ class SignalingService:
             )
             if result.changed:
                 await self._broadcast_room_state(room_code=room_code, state=result.room_state)
+            return
+
+        if message.type == "media-state":
+            payload = MediaStatePayload.model_validate(message.payload)
+            self._validate_payload_participant(payload.participant_id, participant_id)
+            await self.room_service.validate_signaling_sender(
+                session,
+                room_code=room_code,
+                participant_id=participant_id,
+            )
+            await self.connection_manager.send_to_other_participants(
+                room_code=room_code,
+                sender_participant_id=participant_id,
+                message=self._event(
+                    "participant-media-state",
+                    {
+                        "participant_id": str(participant_id),
+                        "is_muted": payload.is_muted,
+                        "is_camera_enabled": payload.is_camera_enabled,
+                    },
+                ),
+            )
             return
 
         if message.type == "offer":

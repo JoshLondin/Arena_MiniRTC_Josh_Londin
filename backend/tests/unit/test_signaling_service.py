@@ -110,6 +110,46 @@ async def test_signaling_forwards_offer_to_other_participant(session_factory):
     ]
 
 
+async def test_signaling_broadcasts_media_state_to_other_participant(session_factory):
+    room_service = RoomService()
+    connection_manager = FakeConnectionManager()
+    signaling_service = SignalingService(
+        room_service=room_service,
+        connection_manager=connection_manager,
+    )
+    async with session_factory() as session:
+        created = await room_service.create_room(session, username="Alice")
+        await room_service.join_room(session, room_code=created.room_code, username="Bob")
+        await signaling_service.handle_raw_message(
+            session,
+            room_code=created.room_code,
+            participant_id=created.participant.participant_id,
+            raw_message={
+                "type": "media-state",
+                "payload": {
+                    "participant_id": str(created.participant.participant_id),
+                    "is_muted": True,
+                    "is_camera_enabled": False,
+                },
+            },
+        )
+
+    assert connection_manager.forwarded == [
+        (
+            created.room_code,
+            created.participant.participant_id,
+            {
+                "type": "participant-media-state",
+                "payload": {
+                    "participant_id": str(created.participant.participant_id),
+                    "is_muted": True,
+                    "is_camera_enabled": False,
+                },
+            },
+        )
+    ]
+
+
 async def test_signaling_rejects_mismatched_payload_participant(session_factory):
     room_service = RoomService()
     connection_manager = FakeConnectionManager()
@@ -130,6 +170,35 @@ async def test_signaling_rejects_mismatched_payload_participant(session_factory)
             },
         )
 
+    assert connection_manager.sent[-1][2]["type"] == "error"
+    assert connection_manager.sent[-1][2]["payload"]["code"] == "INVALID_PARTICIPANT"
+
+
+async def test_signaling_rejects_spoofed_media_state_participant(session_factory):
+    room_service = RoomService()
+    connection_manager = FakeConnectionManager()
+    signaling_service = SignalingService(
+        room_service=room_service,
+        connection_manager=connection_manager,
+    )
+    async with session_factory() as session:
+        created = await room_service.create_room(session, username="Alice")
+        joined = await room_service.join_room(session, room_code=created.room_code, username="Bob")
+        await signaling_service.handle_raw_message(
+            session,
+            room_code=created.room_code,
+            participant_id=created.participant.participant_id,
+            raw_message={
+                "type": "media-state",
+                "payload": {
+                    "participant_id": str(joined.participant.participant_id),
+                    "is_muted": False,
+                    "is_camera_enabled": True,
+                },
+            },
+        )
+
+    assert connection_manager.forwarded == []
     assert connection_manager.sent[-1][2]["type"] == "error"
     assert connection_manager.sent[-1][2]["payload"]["code"] == "INVALID_PARTICIPANT"
 

@@ -181,6 +181,13 @@ label {
 
 .video-grid-single {
   grid-template-columns: minmax(0, 1fr);
+  justify-items: center;
+}
+
+.video-grid-single .video-panel {
+  max-width: min(720px, 100%);
+  min-height: 180px;
+  width: 100%;
 }
 
 .video-panel {
@@ -198,7 +205,15 @@ label {
   width: 100%;
 }
 
-.video-panel span {
+.video-panel-camera-off video {
+  opacity: 0;
+}
+
+.video-panel-centered-label video {
+  opacity: 0;
+}
+
+.video-panel-label {
   background: rgb(15 23 42 / 0.78);
   border-radius: 999px;
   bottom: 10px;
@@ -208,10 +223,72 @@ label {
   position: absolute;
 }
 
+.video-panel-name {
+  color: #f8fafc;
+  font-size: clamp(1.8rem, 5vw, 3.5rem);
+  font-weight: 800;
+  left: 50%;
+  line-height: 1.05;
+  max-width: calc(100% - 48px);
+  overflow-wrap: anywhere;
+  position: absolute;
+  text-align: center;
+  top: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.audio-indicator {
+  align-items: center;
+  display: inline-flex;
+  justify-content: center;
+  position: absolute;
+}
+
+.audio-indicator svg {
+  display: block;
+  height: 100%;
+  width: 100%;
+}
+
+.audio-indicator-large {
+  color: #e2e8f0;
+  height: clamp(96px, 30%, 180px);
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: clamp(96px, 30%, 180px);
+}
+
+.audio-indicator-small {
+  background: rgb(255 255 255 / 0.9);
+  border: 1px solid rgb(15 23 42 / 0.12);
+  border-radius: 999px;
+  bottom: 10px;
+  box-shadow: 0 8px 24px rgb(15 23 42 / 0.24);
+  color: #0f172a;
+  height: 34px;
+  padding: 7px;
+  right: 10px;
+  width: 34px;
+}
+
 .call-actions,
 .controls {
   align-items: center;
   display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.call-actions-single {
+  justify-self: center;
+  max-width: min(720px, 100%);
+  width: 100%;
+}
+
+.call-status-row {
+  align-items: center;
+  display: inline-flex;
   flex-wrap: wrap;
   gap: 10px;
 }
@@ -226,23 +303,25 @@ label {
   padding: 8px 12px;
 }
 
-.status span {
+.status-dot {
   background: #64748b;
   border-radius: 999px;
+  flex: 0 0 auto;
   height: 8px;
   width: 8px;
 }
 
-.status-connected span {
+.status-connected .status-dot {
   background: #16a34a;
 }
 
-.status-connecting span,
-.status-reconnecting span {
+.status-connecting .status-dot,
+.status-reconnecting .status-dot,
+.status-preparing .status-dot {
   background: #f59e0b;
 }
 
-.status-failed span {
+.status-failed .status-dot {
   background: #dc2626;
 }
 
@@ -255,5 +334,9 @@ label {
   .workspace,
   .video-grid {
     grid-template-columns: 1fr;
+  }
+
+  .video-grid-single .video-panel {
+    max-width: 100%;
   }
 }

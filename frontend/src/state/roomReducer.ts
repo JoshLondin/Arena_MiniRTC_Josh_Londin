@@ -1,4 +1,9 @@
-import type { Participant, RoomCredentials, RoomStatePayload } from "../types/signaling";
+import type {
+  Participant,
+  ParticipantMediaState,
+  RoomCredentials,
+  RoomStatePayload
+} from "../types/signaling";
 
 export type ConnectionStatus = "idle" | "connecting" | "connected" | "reconnecting" | "failed";
 export type MediaStatus = "idle" | "preparing" | "connecting" | "connected" | "failed";
@@ -19,6 +24,7 @@ export type RoomState = {
   mediaStatus: MediaStatus;
   isMuted: boolean;
   isCameraEnabled: boolean;
+  participantMediaStates: Record<string, ParticipantMediaState>;
   localStream: MediaStream | null;
   remoteStream: MediaStream | null;
   mediaWarning: string | null;
@@ -37,6 +43,10 @@ export type RoomAction =
       payload: { participant_id: string; reserved_participant_count: number; call_ended?: boolean };
     }
   | { type: "PARTICIPANT_DISCONNECTED"; payload: { participant_id: string } }
+  | {
+      type: "PARTICIPANT_MEDIA_STATE";
+      payload: { participant_id: string; is_muted: boolean; is_camera_enabled: boolean };
+    }
   | { type: "CALL_STARTED"; payload: { call_host_participant_id: string; message: string } }
   | { type: "CALL_JOINED"; payload: { call_host_participant_id: string; room_status: "NEGOTIATING" } }
   | { type: "CALL_ENDED"; payload: { reason: string } }
@@ -48,6 +58,7 @@ export type RoomAction =
   | { type: "SET_LOCAL_STREAM"; payload: MediaStream | null }
   | { type: "SET_REMOTE_STREAM"; payload: MediaStream | null }
   | { type: "SET_MEDIA_WARNING"; payload: string | null }
+  | { type: "CLEAR_PARTICIPANT_MEDIA_STATES" }
   | { type: "SET_ERROR"; payload: string | null };
 
 export function initialRoomState(credentials: RoomCredentials): RoomState {
@@ -75,6 +86,7 @@ export function initialRoomState(credentials: RoomCredentials): RoomState {
     mediaStatus: "idle",
     isMuted: false,
     isCameraEnabled: true,
+    participantMediaStates: {},
     localStream: null,
     remoteStream: null,
     mediaWarning: null,
@@ -86,17 +98,26 @@ export function roomReducer(state: RoomState, action: RoomAction): RoomState {
   switch (action.type) {
     case "BOOTSTRAP":
       return initialRoomState(action.payload);
-    case "ROOM_STATE_RECEIVED":
+    case "ROOM_STATE_RECEIVED": {
+      const participantIds = new Set(
+        action.payload.participants.map((participant) => participant.participant_id)
+      );
       return {
         ...state,
         roomStatus: action.payload.room_status,
         reservedParticipantCount: action.payload.reserved_participant_count,
         capacity: action.payload.capacity,
         participants: action.payload.participants,
+        participantMediaStates: Object.fromEntries(
+          Object.entries(state.participantMediaStates).filter(([participantId]) =>
+            participantIds.has(participantId)
+          )
+        ),
         callStatus: action.payload.call_status,
         callHostParticipantId: action.payload.call_host_participant_id,
         error: null
       };
+    }
     case "PARTICIPANT_JOINED": {
       const hasParticipant = state.participants.some(
         (participant) => participant.participant_id === action.payload.participant_id
@@ -122,7 +143,12 @@ export function roomReducer(state: RoomState, action: RoomAction): RoomState {
         error: null
       };
     }
-    case "PARTICIPANT_LEFT":
+    case "PARTICIPANT_LEFT": {
+      const remainingMediaStates = Object.fromEntries(
+        Object.entries(state.participantMediaStates).filter(
+          ([participantId]) => participantId !== action.payload.participant_id
+        )
+      );
       return {
         ...state,
         participants: state.participants.filter(
@@ -132,9 +158,11 @@ export function roomReducer(state: RoomState, action: RoomAction): RoomState {
         callStatus: action.payload.call_ended ? "IDLE" : state.callStatus,
         callHostParticipantId: action.payload.call_ended ? null : state.callHostParticipantId,
         mediaStatus: action.payload.call_ended ? "idle" : state.mediaStatus,
+        participantMediaStates: action.payload.call_ended ? {} : remainingMediaStates,
         localStream: action.payload.call_ended ? null : state.localStream,
         remoteStream: action.payload.call_ended ? null : state.remoteStream
       };
+    }
     case "PARTICIPANT_DISCONNECTED":
       return {
         ...state,
@@ -143,6 +171,17 @@ export function roomReducer(state: RoomState, action: RoomAction): RoomState {
             ? { ...participant, status: "DISCONNECTED" }
             : participant
         )
+      };
+    case "PARTICIPANT_MEDIA_STATE":
+      return {
+        ...state,
+        participantMediaStates: {
+          ...state.participantMediaStates,
+          [action.payload.participant_id]: {
+            isMuted: action.payload.is_muted,
+            isCameraEnabled: action.payload.is_camera_enabled
+          }
+        }
       };
     case "CALL_STARTED":
       return {
@@ -168,6 +207,7 @@ export function roomReducer(state: RoomState, action: RoomAction): RoomState {
         callStatus: "IDLE",
         callHostParticipantId: null,
         mediaStatus: "idle",
+        participantMediaStates: {},
         localStream: null,
         remoteStream: null
       };
@@ -177,6 +217,7 @@ export function roomReducer(state: RoomState, action: RoomAction): RoomState {
         error: "This room was deleted.",
         connectionStatus: "failed",
         mediaStatus: "idle",
+        participantMediaStates: {},
         localStream: null,
         remoteStream: null
       };
@@ -197,6 +238,8 @@ export function roomReducer(state: RoomState, action: RoomAction): RoomState {
       return { ...state, remoteStream: action.payload };
     case "SET_MEDIA_WARNING":
       return { ...state, mediaWarning: action.payload };
+    case "CLEAR_PARTICIPANT_MEDIA_STATES":
+      return { ...state, participantMediaStates: {} };
     case "SET_ERROR":
       return { ...state, error: action.payload };
     default:

@@ -38,6 +38,12 @@ class MediaConnectedPayload(BaseModel):
     participant_id: UUID | None = None
 
 
+class MediaStatePayload(BaseModel):
+    participant_id: UUID | None = None
+    is_muted: bool
+    is_camera_enabled: bool
+
+
 class OfferPayload(BaseModel):
     sdp: dict[str, Any]
 
@@ -51,4 +57,3 @@ class IceCandidatePayload(BaseModel):
     sdpMid: str | None = None
     sdpMLineIndex: int | None = None
     usernameFragment: str | None = None
-
