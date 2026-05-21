@@ -8,7 +8,6 @@ services:
     name: arena-minirtc-josh-londin-api
     runtime: docker
     dockerfilePath: backend/Dockerfile
-    dockerContext: backend
     plan: free
     envVars:
       - key: DATABASE_URL

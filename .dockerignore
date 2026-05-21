@@ -1,0 +1,10 @@
+.git
+.ruff_cache
+backend/.pytest_cache
+backend/.ruff_cache
+backend/.venv
+backend/app/**/__pycache__
+backend/tests/**/__pycache__
+backend/minirtc_backend.egg-info
+frontend/dist
+frontend/node_modules

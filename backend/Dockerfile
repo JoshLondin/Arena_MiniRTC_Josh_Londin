@@ -2,9 +2,9 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-COPY pyproject.toml alembic.ini ./
-COPY alembic ./alembic
-COPY app ./app
+COPY backend/pyproject.toml backend/alembic.ini ./
+COPY backend/alembic ./alembic
+COPY backend/app ./app
 
 RUN pip install --no-cache-dir -e .
 
