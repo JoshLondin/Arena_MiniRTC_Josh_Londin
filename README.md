@@ -27,7 +27,6 @@ MiniRTC is a 1:1 WebRTC calling product built for the Arena home assignment. Use
 - Screen sharing.
 - Multi-party calls, SFU, or MCU media routing.
 - Redis and multi-instance WebSocket fanout.
-- Production deployment is not yet completed in this repo.
 
 ## Implementation Blueprint
 
@@ -36,6 +35,28 @@ created before the build. It was written to give Codex the necessary product
 requirements, component breakdown, technologies, API schemas, WebSocket message
 contracts, WebRTC flow, backend data model, testing expectations, and delivery
 notes needed to implement MiniRTC.
+
+## Deployed Version
+
+MiniRTC is deployed on Render with a static Vite frontend, Dockerized FastAPI
+backend, and managed Render PostgreSQL database.
+
+- Frontend: https://arena-minirtc-josh-londin-web.onrender.com
+- Backend health: https://arena-minirtc-josh-londin.onrender.com/health
+
+The backend root URL is an API service, so opening
+`https://arena-minirtc-josh-londin.onrender.com/` directly returns FastAPI's
+`{"detail":"Not Found"}` response. Use the frontend URL above to try the app.
+
+The deployment uses HTTPS for the frontend/API and WSS for WebSocket signaling.
+TURN support is implemented and configurable through backend environment
+variables, but the take-home deployment intentionally runs with STUN only unless
+a real TURN relay provider or coturn server is provisioned.
+
+I did not provision a TURN provider for the take-home because TURN is an
+operational relay service, not missing application code: it requires a managed
+provider or hosted coturn server, carries media bandwidth cost, and should be
+paired with short-lived credentials and usage monitoring in production.
 
 ## Run Locally With Docker
 

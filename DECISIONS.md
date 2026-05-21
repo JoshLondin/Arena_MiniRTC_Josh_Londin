@@ -228,6 +228,78 @@ credentials are also not production-grade because they are hard to rotate and
 hard to limit per user or room. A production deployment should configure managed
 TURN or coturn, preferably with short-lived credentials and usage monitoring.
 
+### Deployment
+
+#### <u>Render Blueprint Plus Manual Verification</u>
+
+**Decision:** MiniRTC uses `render.yaml` as the intended Render Blueprint while
+also verifying the actual Render-created services, URLs, and environment values
+in the dashboard.
+
+**Why:** The Blueprint makes the deployment reproducible from the repository:
+one managed database, one Docker backend web service, and one static frontend
+site. Manual verification was still necessary because generated service names,
+hostnames, and dashboard-created resources can differ from the intended names.
+
+**Tradeoff:** Infrastructure-as-code is clearer and easier to review, but the
+take-home deployment still needed hands-on verification to catch real production
+configuration issues, including the backend initially using a localhost
+Postgres URL instead of Render's internal database URL.
+
+#### <u>Dockerized Backend, Static Frontend</u>
+
+**Decision:** The FastAPI backend deploys as a Docker web service, while the
+Vite frontend deploys as a static site built from production assets.
+
+**Why:** The backend needs Python dependencies, Alembic migrations, Uvicorn,
+WebSocket support, runtime environment variables, and Render's dynamic `PORT`.
+The frontend only needs an HTML/CSS/JavaScript bundle after `npm run build`, so
+serving it as static files is simpler and cheaper than running a Node server.
+
+**Tradeoff:** This cleanly separates API and UI hosting, but it creates two
+public origins. The frontend build must know the backend HTTPS and WSS URLs, and
+the backend must allow the frontend origin through CORS.
+
+#### <u>Managed Render PostgreSQL</u>
+
+**Decision:** The deployed app uses Render PostgreSQL for room, participant,
+call, reconnect, heartbeat, and cleanup state.
+
+**Why:** Production should not store durable room state inside the backend
+container. Render PostgreSQL matches the local Postgres architecture and gives
+the backend a managed database connection through `DATABASE_URL`.
+
+**Tradeoff:** Managed Postgres reduces operational setup for the take-home, but
+the free instance has lifecycle limits and is not a full production database
+plan. A production deployment would need paid sizing, backups, retention,
+monitoring, and explicit database maintenance policies.
+
+#### <u>Production HTTPS And WSS URLs</u>
+
+**Decision:** The deployed frontend talks to the backend over HTTPS for REST and
+WSS for WebSocket signaling.
+
+**Why:** Browser media APIs require secure origins outside localhost, and
+production WebSocket signaling should use TLS. Using explicit frontend build
+variables keeps local `http://` / `ws://` development separate from deployed
+`https://` / `wss://` URLs.
+
+**Tradeoff:** URL configuration becomes part of deployment. If Render generates
+different service hostnames, `VITE_API_BASE_URL`, `VITE_WS_BASE_URL`, and
+`CORS_ALLOWED_ORIGINS` must be updated and the affected service redeployed.
+
+#### <u>SPA Rewrite For Room Links</u>
+
+**Decision:** The Render static site rewrites `/*` to `/index.html`.
+
+**Why:** Room links such as `/room/{roomCode}` are client-side React routes.
+Without the rewrite, opening or refreshing a room link would ask Render for a
+physical file at that path and return a 404.
+
+**Tradeoff:** The rewrite is correct for the frontend because the backend lives
+on a separate API origin. If the app were deployed behind one shared domain, the
+rewrite rules would need to avoid intercepting API and WebSocket paths.
+
 ## Technologies
 
 ### Frontend
@@ -570,6 +642,98 @@ issues before tests run.
 For this project, Ruff is the quick static-quality gate before running the
 backend test suite. It helps keep the take-home codebase consistent without
 introducing a larger formatting/tooling setup.
+
+### Deployment
+
+#### <u>Render</u>
+
+**What it is:** [Render](https://render.com/docs) is a cloud application
+platform for deploying web services, static sites, databases, and background
+workers.
+
+**How MiniRTC uses it:** Render hosts the deployed MiniRTC backend, frontend,
+and PostgreSQL database. The backend runs as a Docker web service, the frontend
+runs as a static site, and Render provides managed HTTPS endpoints for both
+services.
+
+Render also stores production environment variables, provides the managed
+Postgres connection string, exposes WSS-capable service URLs for WebSocket
+signaling, and gives a dashboard for deployment logs and manual verification.
+
+#### <u>Render Blueprint</u>
+
+**What it is:** A [Render Blueprint](https://render.com/docs/blueprint-spec) is
+a `render.yaml` file that describes Render infrastructure and service settings
+from source control.
+
+**How MiniRTC uses it:** The root `render.yaml` documents the intended
+deployment: one Render PostgreSQL database, one Docker backend service, and one
+static frontend service. It also declares production environment variables for
+database access, token hashing, CORS, STUN/TURN configuration, and frontend API
+and WebSocket URLs.
+
+The Blueprint includes the frontend rewrite rule from `/*` to `/index.html` so
+shared room links load the React app. In practice, the deployed Render services
+still need their actual generated URLs verified before final testing.
+
+#### <u>Render PostgreSQL</u>
+
+**What it is:** [Render PostgreSQL](https://render.com/docs/postgresql-creating-connecting)
+is Render's managed PostgreSQL database service.
+
+**How MiniRTC uses it:** The deployed backend stores rooms, participants, call
+state, reconnect metadata, heartbeat timestamps, and cleanup state in Render
+PostgreSQL. Render provides the database connection through `DATABASE_URL`.
+
+The backend normalizes Render-provided Postgres URLs to
+`postgresql+asyncpg://` before SQLAlchemy and Alembic use them. That lets local
+development and production share the same async database driver while accepting
+Render's generated connection string format.
+
+#### <u>Dockerfile Backend Deployment</u>
+
+**What it is:** A [Dockerfile](https://docs.docker.com/reference/dockerfile/)
+defines the container image used to run an application.
+
+**How MiniRTC uses it:** The backend Dockerfile starts from `python:3.12-slim`,
+copies the backend package, app code, Alembic migration config, and migration
+files into `/app`, then installs the backend with `pip install --no-cache-dir
+-e .`.
+
+At runtime, the container runs `alembic upgrade head` before starting Uvicorn.
+Uvicorn binds to `0.0.0.0` and uses `${PORT:-8000}` so the same image works
+locally and on Render's dynamic web service port.
+
+#### <u>Render Static Site</u>
+
+**What it is:** [Render Static Sites](https://render.com/docs/static-sites)
+serve prebuilt frontend assets from a build output directory.
+
+**How MiniRTC uses it:** Render builds the frontend with `cd frontend && npm ci
+&& npm run build` and publishes `frontend/dist`. Vite reads
+`VITE_API_BASE_URL` and `VITE_WS_BASE_URL` at build time so the deployed React
+app calls the correct backend HTTPS and WSS origins.
+
+The static site also owns the SPA rewrite rule. Requests for `/room/{roomCode}`
+return `index.html`, allowing the browser app to parse the room code from the
+path and reconnect or show the join flow.
+
+#### <u>Production Environment Variables</u>
+
+**What it is:** [Render environment variables](https://render.com/docs/configure-environment-variables)
+are service-specific configuration values and secrets provided at build time or
+runtime.
+
+**How MiniRTC uses it:** The backend uses `DATABASE_URL`,
+`TOKEN_HASH_SECRET`, `CORS_ALLOWED_ORIGINS`, `STUN_SERVER_URL`, and optional
+`TURN_SERVER_URL`, `TURN_USERNAME`, and `TURN_PASSWORD`. `DATABASE_URL` points
+to Render PostgreSQL, `TOKEN_HASH_SECRET` protects token hashes, CORS allows the
+frontend origin, and STUN/TURN settings control the ICE server response.
+
+The frontend uses `VITE_API_BASE_URL` and `VITE_WS_BASE_URL` during the Vite
+build. These values are intentionally separate from backend runtime settings
+because static assets cannot read new environment values after they are built;
+changing them requires a frontend rebuild and redeploy.
 
 ## Scaling and Cost
 
