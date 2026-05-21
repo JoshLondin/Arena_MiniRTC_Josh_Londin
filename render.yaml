@@ -7,7 +7,8 @@ services:
   - type: web
     name: arena-minirtc-josh-londin-api
     runtime: docker
-    rootDir: backend
+    dockerfilePath: backend/Dockerfile
+    dockerContext: backend
     plan: free
     envVars:
       - key: DATABASE_URL
@@ -30,9 +31,8 @@ services:
   - type: web
     name: arena-minirtc-josh-londin-web
     runtime: static
-    rootDir: frontend
-    buildCommand: npm ci && npm run build
-    staticPublishPath: dist
+    buildCommand: cd frontend && npm ci && npm run build
+    staticPublishPath: frontend/dist
     envVars:
       - key: VITE_API_BASE_URL
         value: https://arena-minirtc-josh-londin-api.onrender.com
