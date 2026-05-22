@@ -10,7 +10,7 @@ the take-home assignment scale.
 
 #### <u>React SPA With Hook-Owned Realtime Boundaries</u>
 
-**Decision:** MiniRTC is a Vite-powered React single-page app. The main room
+**Decision:** MiniRTC is a Vite-powered React single-page app (SPA). The main room
 flow is coordinated in `App.tsx`, while side effects are split into hooks:
 `useRoom` for REST room actions, `useWebSocket` for signaling transport,
 `useMediaDevices` for browser media permissions, and `useWebRTC` for peer
@@ -20,10 +20,10 @@ connection lifecycle.
 one browser app avoids routing complexity and makes it easy to coordinate room
 state, socket state, media state, and call controls in one place.
 
-**Tradeoff:** This keeps the implementation lean, but it also means the app is
-careful hand-rolled state management rather than a formal state machine. A
-larger product could move the room/call lifecycle into XState, Redux Toolkit, or
-another explicit state model to make every transition easier to test and audit.
+**Tradeoff:** This keeps the implementation lean, but it also means the app uses
+careful hand-rolled state management rather than a formal state machine. A larger
+product could move the room/call lifecycle into XState, Redux Toolkit, or another
+explicit state model to make every transition easier to test and audit.
 
 #### <u>Room State Is Authoritative, UI Deltas Are Optimistic</u>
 
@@ -33,7 +33,7 @@ events such as `participant-joined`, `participant-left`, and
 `participant-disconnected` update the UI immediately, then the next `room-state`
 reconciles the client with the backend.
 
-**Why:** The original bugs came from the browser relying on stale local state.
+**Why:** Some initial bugs came from the browser relying on stale local state.
 The room UI needs to update without refresh, especially for participant lists,
 room-full behavior, leave confirmation, and Start Call / Join Call visibility.
 
@@ -80,7 +80,7 @@ call host is the only peer that creates the SDP offer after the other participan
 joins. The joining participant prepares media, creates a peer connection, and
 waits for the offer.
 
-**Why:** This removes offer glare for the current 1:1 flow. The previous approach
+**Why:** This removes offer glare for the current 1:1 flow. Other approaches
 could leave both peers waiting or negotiating inconsistently, especially when
 state updates arrived in different orders.
 
@@ -122,9 +122,9 @@ and faster, but it would keep the camera active.
 #### <u>Participant Media Indicators Over Signaling</u>
 
 **Decision:** The video panel shows speaker and muted speaker icons for the
-current participant and broadcasts ephemeral mute/camera state over WebSocket so
-the remote tile can show the other participant's current media state after the
-local user has joined the call.
+current participant and broadcasts ephemeral mute/unmute and camera states over
+WebSocket so the remote tile can show the other participant's current media state
+after the local user has joined the call.
 
 **Why:** Users need clear feedback about their own mute and camera state,
 especially when camera-off stops the video track and leaves the tile otherwise
@@ -342,7 +342,7 @@ place so call events, participant events, socket state, and media state update
 predictably.
 
 The room reducer also stores a per-participant media-state map for live
-mute/camera indicators. `RoomPage` derives tile display modes from that state:
+mute/unmute and camera indicators. `RoomPage` derives tile display modes from that state:
 idle rooms show centered participant names, started calls show waiting copy such
 as "Bob has not joined the call" until both users join, and active calls show
 video with local and remote media indicators.
@@ -591,7 +591,7 @@ schema changes for call history, and future tables for accounts or analytics.
 
 #### <u>Uvicorn</u>
 
-**What it is:** Uvicorn is an ASGI server for Python web applications.
+**What it is:** [Uvicorn](https://uvicorn.dev/) is an [ASGI](https://asgi.readthedocs.io/en/latest/) server for Python web applications.
 
 **How MiniRTC uses it:** Docker Compose runs the FastAPI app through Uvicorn so
 the backend can serve both HTTP endpoints and WebSocket connections.
@@ -625,7 +625,7 @@ working network path. TURN relays media when direct connectivity fails.
 **How MiniRTC uses it:** The backend returns ICE server config from
 `/rooms/{room_code}/ice-servers`. STUN is always available by config, and TURN
 can be added by environment variables. This means the TURN path is implemented
-and tested in the app, while the current take-home deployment runs with STUN
+and tested, while the current deployment runs with STUN
 only.
 
 The endpoint is authenticated with participant credentials, which keeps ICE
@@ -799,23 +799,23 @@ in-memory WebSocket fanout constraint as local development.
 
 #### <u>How We Would Scale The Product</u>
 
-Run REST and WebSocket workers as stateless services behind a load balancer, but
+First, we would run REST and WebSocket workers as stateless services behind a load balancer, but
 move live room fanout into a shared messaging layer such as Redis Pub/Sub, Redis
-Streams, NATS, or a managed realtime bus. WebSocket workers would subscribe to
+Streams, NATS, or a managed realtime bus. WebSocket workers would then subscribe to
 room channels for the sockets they currently hold.
 
-Move hot presence data to Redis with TTLs: active socket state, last heartbeat,
-short reconnect windows, and pending cleanup markers. Keep Postgres for durable
+Next, we would move hot presence data to Redis with TTLs: active socket state, last heartbeat,
+short reconnect windows, and pending cleanup markers. We would keep Postgres for durable
 room records, participant records, token hashes, call state, and audit-friendly
 events. The backend can periodically compact Redis presence back into Postgres
 where durable history is useful.
 
-Add indexes around room code, participant room ID, participant status, last seen
-time, and reconnect deadlines. Replace broad cleanup scans with bounded,
-indexed cleanup jobs. Scale WebSocket workers based on connected sockets,
+We would also add indexes around room code, participant room ID, participant status, last seen
+time, and reconnect deadlines. We'd replace broad cleanup scans with bounded,
+indexed cleanup jobs; and scale WebSocket workers based on connected sockets,
 messages per second, CPU, memory, and event loop lag.
 
-Add metrics for room create/join failures, `ROOM_FULL`, reconnect success rate,
+Lastly, we would add metrics for room create/join failures, `ROOM_FULL`, reconnect success rate,
 WebSocket close codes, call-start-to-IN_CALL time, ICE failure rate, TURN relay
 ratio, TURN bandwidth, and cleanup lag. Those metrics would tell us whether the
 system is failing because of app logic, network traversal, or infrastructure.
@@ -827,24 +827,24 @@ view.
 
 #### <u>How You'd Keep Costs Sane</u>
 
-Keep media peer-to-peer by default. The backend should never carry audio/video
+We would keep media peer-to-peer by default. The backend should never carry audio/video
 unless the product intentionally moves to an [SFU](https://medium.com/@jamesbordane57/webrtc-sfu-the-complete-guide-3589be4daa54). Signaling messages are tiny,
 so the main app servers should scale mostly with connections and small JSON
 events rather than media bandwidth.
 
-Use TURN only when needed. Issue short-lived TURN credentials, monitor relay
-ratio, set bandwidth quotas, choose regions carefully, and alert on unusual
+We would use TURN only when needed, issuing short-lived TURN credentials, monitoring relay
+ratio, setting bandwidth quotas, choosing regions carefully, and alerting on unusual
 relay usage. TURN should be treated as a metered fallback path, not the default
 media route.
 
-Reduce database write volume by moving heartbeat/presence to Redis TTLs and
+We would also reduce database write volume by moving heartbeat/presence to Redis TTLs and
 writing durable state only on meaningful transitions: create, join, leave,
 disconnect, reconnect, call start, call join, call end, and room cleanup.
 
-Expire unused rooms aggressively. Keep room TTLs short, clean stale disconnected
-participants, delete empty rooms, and avoid storing media. Autoscale WebSocket
-workers up and down based on concurrent connections instead of over-provisioning
-for peak daily room count.
+We would expire unused rooms aggressively by keeping room TTLs short, cleaning
+stale disconnected participants, deleting empty rooms, and avoiding stored media.
+We would also autoscale WebSocket workers up and down based on concurrent
+connections instead of over-provisioning for peak daily room count.
 
 The static frontend is the cheapest part of the deployed architecture. The main
 cost drivers are long-lived backend WebSocket capacity, Postgres write volume
@@ -854,17 +854,17 @@ service, a free database, static hosting, and no provisioned TURN relay.
 
 #### <u>What You'd Do About NAT Traversal (TURN) In Real Life</u>
 
-Run a real TURN layer from day one for production. That could be managed TURN or
+We would run a real TURN layer from day one for production. That could be managed TURN or
 a monitored coturn deployment in multiple regions. The backend should issue
 time-limited credentials from the ICE server endpoint rather than shipping static
 TURN usernames/passwords to the browser.
 
-Support UDP TURN for best performance and TCP/TLS TURN for restrictive networks.
-Collect client-side ICE diagnostics so we can see how often calls connect
+We would support UDP TURN for best performance and TCP/TLS TURN for restrictive networks.
+We'd also collect client-side ICE diagnostics so we can see how often calls connect
 directly, through STUN-assisted peer-to-peer paths, or through TURN relay.
 
-Monitor relay bandwidth, allocation failures, region latency, ICE failure rate,
+We would also monitor relay bandwidth, allocation failures, region latency, ICE failure rate,
 and cost per connected minute. If relay usage is consistently high, or if the
 product expands to group calls, recording, moderation, or server-side media
-features, introduce an SFU and make TURN plus SFU placement part of the media
+features, we'd introduce an SFU and make TURN plus SFU placement part of the media
 architecture rather than a browser-only fallback.

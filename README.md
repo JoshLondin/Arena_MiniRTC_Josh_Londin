@@ -1,6 +1,6 @@
 # MiniRTC
 
-MiniRTC is a 1:1 WebRTC calling product built for the Arena home assignment. Users create or join a room by URL, then start or join an audio-required call with optional video, mute/camera controls, presence, reconnect windows, and WebSocket signaling.
+MiniRTC is a 1:1 WebRTC calling product. Users create or join a room by URL, then start or join an audio-required call with optional video, mute/unmute and camera controls, presence indicators, reconnect windows, and WebSocket signaling.
 
 ## What Was Built
 
@@ -11,7 +11,9 @@ MiniRTC is a 1:1 WebRTC calling product built for the Arena home assignment. Use
 - Two reserved participant slots per room, including disconnected participants inside reconnect windows.
 - Distinct signaling connection status and WebRTC media status in the UI.
 - Start Call / Join Call behavior based on live room state.
-- Mute and camera controls.
+- Mute/unmute and camera controls.
+- Local and remote mute/camera indicators during an active call.
+- Copy Room Link control for sharing the current room URL.
 - Distinct leave-call and leave-room behavior, including a final-participant
   room-close confirmation.
 - Opaque participant and host tokens stored hashed in Postgres.
@@ -22,7 +24,7 @@ MiniRTC is a 1:1 WebRTC calling product built for the Arena home assignment. Use
 ## What Was Skipped
 
 - Full account creation/login/JWT auth.
-- Waitlists.
+- Room waitlists.
 - Persistent call history.
 - Screen sharing.
 - Multi-party calls, SFU, or MCU media routing.
@@ -34,7 +36,8 @@ MiniRTC is a 1:1 WebRTC calling product built for the Arena home assignment. Use
 created before the build. It was written to give Codex the necessary product
 requirements, component breakdown, technologies, API schemas, WebSocket message
 contracts, WebRTC flow, backend data model, testing expectations, and delivery
-notes needed to implement MiniRTC.
+notes needed to implement MiniRTC. It was later updated to include deployment
+specifics.
 
 ## Deployed Version
 
@@ -53,7 +56,7 @@ TURN support is implemented and configurable through backend environment
 variables, but the take-home deployment intentionally runs with STUN only unless
 a real TURN relay provider or coturn server is provisioned.
 
-I did not provision a TURN provider for the take-home because TURN is an
+A TURN provider was not provisioned for this assignment because TURN is an
 operational relay service, not missing application code: it requires a managed
 provider or hosted coturn server, carries media bandwidth cost, and should be
 paired with short-lived credentials and usage monitoring in production.
@@ -140,7 +143,7 @@ Backend:
 
 ```bash
 cd backend
-ruff check .
+ruff check app tests
 python3 -m pytest
 ```
 
@@ -149,6 +152,7 @@ Frontend:
 ```bash
 cd frontend
 npm run typecheck
+npm run test
 npm run build
 ```
 

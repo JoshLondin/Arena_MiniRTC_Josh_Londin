@@ -5,7 +5,7 @@ databases:
 
 services:
   - type: web
-    name: arena-minirtc-josh-londin-api
+    name: arena-minirtc-josh-londin
     runtime: docker
     dockerfilePath: backend/Dockerfile
     plan: free
@@ -38,6 +38,6 @@ services:
         destination: /index.html
     envVars:
       - key: VITE_API_BASE_URL
-        value: https://arena-minirtc-josh-londin-api.onrender.com
+        value: https://arena-minirtc-josh-londin.onrender.com
       - key: VITE_WS_BASE_URL
-        value: wss://arena-minirtc-josh-londin-api.onrender.com
+        value: wss://arena-minirtc-josh-londin.onrender.com
