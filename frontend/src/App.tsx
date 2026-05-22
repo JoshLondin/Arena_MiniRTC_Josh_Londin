@@ -250,6 +250,10 @@ export function App() {
   const prepareMedia = useCallback(async () => {
     dispatch({ type: "SET_MEDIA_STATUS", payload: "preparing" });
     const media = await mediaDevices.getCallMedia();
+    media.stream.getAudioTracks().forEach((track) => {
+      track.enabled = true;
+    });
+    dispatch({ type: "SET_MUTED", payload: false });
     webRtc.attachLocalStream(media.stream, media.warning);
     dispatch({ type: "SET_CAMERA_ENABLED", payload: media.stream.getVideoTracks().length > 0 });
   }, [mediaDevices, webRtc]);

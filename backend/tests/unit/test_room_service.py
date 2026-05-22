@@ -282,6 +282,52 @@ async def test_reconnecting_room_only_participant_during_pending_call_does_not_r
     assert result.room_status == RoomStatus.CALL_PENDING.value
 
 
+async def test_active_call_reconnect_restarts_as_pending_with_connected_participant_as_host(
+    session_factory,
+    room_service,
+):
+    async with session_factory() as session:
+        created = await room_service.create_room(session, username="Alice")
+        joined = await room_service.join_room(session, room_code=created.room_code, username="Bob")
+        await room_service.start_call(
+            session,
+            room_code=created.room_code,
+            participant_id=created.participant.participant_id,
+        )
+        await room_service.join_call(
+            session,
+            room_code=created.room_code,
+            participant_id=joined.participant.participant_id,
+        )
+        await room_service.mark_media_connected(
+            session,
+            room_code=created.room_code,
+            participant_id=created.participant.participant_id,
+        )
+        await room_service.mark_media_connected(
+            session,
+            room_code=created.room_code,
+            participant_id=joined.participant.participant_id,
+        )
+        await room_service.mark_participant_disconnected(
+            session,
+            room_code=created.room_code,
+            participant_id=created.participant.participant_id,
+        )
+        result = await room_service.reconnect_participant(
+            session,
+            room_code=created.room_code,
+            participant_id=created.participant.participant_id,
+            participant_token=created.participant_token,
+        )
+        state = await room_service.get_room_state_payload(session, room_code=created.room_code)
+
+    assert result.must_restart_peer_connection is True
+    assert result.call_status == CallStatus.CALL_PENDING.value
+    assert result.room_status == RoomStatus.CALL_PENDING.value
+    assert state.call_host_participant_id == joined.participant.participant_id
+
+
 async def test_expired_active_call_participant_removal_ends_call(session_factory, room_service):
     async with session_factory() as session:
         created = await room_service.create_room(session, username="Alice")

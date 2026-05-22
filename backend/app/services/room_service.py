@@ -792,12 +792,13 @@ class RoomService:
 
         if room.call_status in {CallStatus.NEGOTIATING.value, CallStatus.IN_CALL.value}:
             active = await self._active_participants(session, room_id=room.id)
-            if len(active) >= 2:
-                room.call_status = CallStatus.NEGOTIATING.value
-                room.status = RoomStatus.NEGOTIATING.value
-            else:
-                room.call_status = CallStatus.CALL_PENDING.value
-                room.status = RoomStatus.CALL_PENDING.value
+            other_active = next((p for p in active if p.id != participant.id), None)
+            if other_active is not None:
+                room.call_host_participant_id = other_active.id
+            elif room.call_host_participant_id is None:
+                room.call_host_participant_id = participant.id
+            room.call_status = CallStatus.CALL_PENDING.value
+            room.status = RoomStatus.CALL_PENDING.value
             return True
 
         return False

@@ -102,17 +102,21 @@ export function roomReducer(state: RoomState, action: RoomAction): RoomState {
       const participantIds = new Set(
         action.payload.participants.map((participant) => participant.participant_id)
       );
+      const participantMediaStates =
+        action.payload.call_status === "IDLE" || action.payload.call_status === "CALL_PENDING"
+          ? {}
+          : Object.fromEntries(
+              Object.entries(state.participantMediaStates).filter(([participantId]) =>
+                participantIds.has(participantId)
+              )
+            );
       return {
         ...state,
         roomStatus: action.payload.room_status,
         reservedParticipantCount: action.payload.reserved_participant_count,
         capacity: action.payload.capacity,
         participants: action.payload.participants,
-        participantMediaStates: Object.fromEntries(
-          Object.entries(state.participantMediaStates).filter(([participantId]) =>
-            participantIds.has(participantId)
-          )
-        ),
+        participantMediaStates,
         callStatus: action.payload.call_status,
         callHostParticipantId: action.payload.call_host_participant_id,
         error: null
@@ -158,20 +162,29 @@ export function roomReducer(state: RoomState, action: RoomAction): RoomState {
         callStatus: action.payload.call_ended ? "IDLE" : state.callStatus,
         callHostParticipantId: action.payload.call_ended ? null : state.callHostParticipantId,
         mediaStatus: action.payload.call_ended ? "idle" : state.mediaStatus,
+        isMuted: action.payload.call_ended ? false : state.isMuted,
+        isCameraEnabled: action.payload.call_ended ? true : state.isCameraEnabled,
         participantMediaStates: action.payload.call_ended ? {} : remainingMediaStates,
         localStream: action.payload.call_ended ? null : state.localStream,
         remoteStream: action.payload.call_ended ? null : state.remoteStream
       };
     }
-    case "PARTICIPANT_DISCONNECTED":
+    case "PARTICIPANT_DISCONNECTED": {
+      const remainingMediaStates = Object.fromEntries(
+        Object.entries(state.participantMediaStates).filter(
+          ([participantId]) => participantId !== action.payload.participant_id
+        )
+      );
       return {
         ...state,
         participants: state.participants.map((participant) =>
           participant.participant_id === action.payload.participant_id
             ? { ...participant, status: "DISCONNECTED" }
             : participant
-        )
+        ),
+        participantMediaStates: remainingMediaStates
       };
+    }
     case "PARTICIPANT_MEDIA_STATE":
       return {
         ...state,
@@ -207,6 +220,8 @@ export function roomReducer(state: RoomState, action: RoomAction): RoomState {
         callStatus: "IDLE",
         callHostParticipantId: null,
         mediaStatus: "idle",
+        isMuted: false,
+        isCameraEnabled: true,
         participantMediaStates: {},
         localStream: null,
         remoteStream: null
@@ -217,6 +232,8 @@ export function roomReducer(state: RoomState, action: RoomAction): RoomState {
         error: "This room was deleted.",
         connectionStatus: "failed",
         mediaStatus: "idle",
+        isMuted: false,
+        isCameraEnabled: true,
         participantMediaStates: {},
         localStream: null,
         remoteStream: null

@@ -63,6 +63,8 @@ describe("room reducer participant media state", () => {
   it("clears media state when the call ends", () => {
     const state = {
       ...makeRoomState(),
+      isMuted: true,
+      isCameraEnabled: false,
       participantMediaStates: {
         "bob-id": { isMuted: true, isCameraEnabled: false }
       }
@@ -71,6 +73,50 @@ describe("room reducer participant media state", () => {
     const nextState = roomReducer(state, {
       type: "CALL_ENDED",
       payload: { reason: "HOST_ENDED" }
+    });
+
+    expect(nextState.participantMediaStates).toEqual({});
+    expect(nextState.isMuted).toBe(false);
+    expect(nextState.isCameraEnabled).toBe(true);
+  });
+
+  it("resets local media controls when a participant leaves and ends the call", () => {
+    const state = {
+      ...makeRoomState(),
+      isMuted: true,
+      isCameraEnabled: false,
+      callStatus: "IN_CALL" as const,
+      participantMediaStates: {
+        "bob-id": { isMuted: true, isCameraEnabled: true }
+      }
+    };
+
+    const nextState = roomReducer(state, {
+      type: "PARTICIPANT_LEFT",
+      payload: {
+        participant_id: "bob-id",
+        reserved_participant_count: 1,
+        call_ended: true
+      }
+    });
+
+    expect(nextState.callStatus).toBe("IDLE");
+    expect(nextState.isMuted).toBe(false);
+    expect(nextState.isCameraEnabled).toBe(true);
+    expect(nextState.participantMediaStates).toEqual({});
+  });
+
+  it("removes a disconnected participant media state", () => {
+    const state = {
+      ...makeRoomState(),
+      participantMediaStates: {
+        "bob-id": { isMuted: true, isCameraEnabled: false }
+      }
+    };
+
+    const nextState = roomReducer(state, {
+      type: "PARTICIPANT_DISCONNECTED",
+      payload: { participant_id: "bob-id" }
     });
 
     expect(nextState.participantMediaStates).toEqual({});
@@ -97,5 +143,30 @@ describe("room reducer participant media state", () => {
     });
 
     expect(nextState.participantMediaStates).toEqual({});
+  });
+
+  it("clears stale media state when room state restarts a call as pending", () => {
+    const state = {
+      ...makeRoomState(),
+      callStatus: "IN_CALL" as const,
+      participantMediaStates: {
+        "bob-id": { isMuted: true, isCameraEnabled: false }
+      }
+    };
+
+    const nextState = roomReducer(state, {
+      type: "ROOM_STATE_RECEIVED",
+      payload: {
+        room_status: "CALL_PENDING",
+        reserved_participant_count: 2,
+        capacity: 2,
+        participants: state.participants,
+        call_status: "CALL_PENDING",
+        call_host_participant_id: "alice-id"
+      }
+    });
+
+    expect(nextState.participantMediaStates).toEqual({});
+    expect(nextState.callStatus).toBe("CALL_PENDING");
   });
 });
