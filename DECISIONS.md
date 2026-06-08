@@ -59,6 +59,22 @@ wasteful if many idle clients poll constantly; a production lobby could use
 server-sent events, a lobby WebSocket, cache-backed room summaries, or explicit
 pagination and search.
 
+#### <u>Mutable Room Names, Stable Room Codes</u>
+
+**Decision:** Rooms have a mutable display name and an immutable room code. The
+room code remains the URL and backend lookup key, while the room name is shown
+in the lobby and room header. Hosts can rename rooms at any time, including
+during an active call.
+
+**Why:** Human-readable room names make the lobby easier to scan, but room
+links still need a stable identifier that does not change when the title
+changes.
+
+**Tradeoff:** This introduces one more piece of room metadata and a host-only
+mutation path. The frontend must distinguish display name from share URL, and
+the backend must broadcast room-state after renames so non-host participants see
+the updated title without refresh.
+
 #### <u>Signaling Status And Media Status Are Separate</u>
 
 **Decision:** The top room status represents WebSocket/signaling connectivity
@@ -346,10 +362,11 @@ rewrite rules would need to avoid intercepting API and WebSocket paths.
 interfaces from components and hooks.
 
 **How MiniRTC uses it:** React renders the username entry form, available-room
-lobby, room page, participant list, call controls, connection status,
-warning/error messages, and video panels. `App.tsx` coordinates the product
-flow, while components such as `LobbyPage`, `RoomPage`, `VideoPanel`,
-`CallControls`, and `JoinRoomForm` stay focused on UI rendering.
+lobby, optional room-name entry, host rename controls, room page, participant
+list, call controls, connection status, warning/error messages, and video
+panels. `App.tsx` coordinates the product flow, while components such as
+`LobbyPage`, `RoomPage`, `VideoPanel`, `CallControls`, and `JoinRoomForm` stay
+focused on UI rendering.
 
 Hooks isolate the parts of the app that talk to the outside world:
 `useRoom` wraps REST calls, `useWebSocket` owns the signaling socket,
@@ -408,12 +425,15 @@ messages from the backend error envelope.
 
 The small `requestJson` helper centralizes JSON encoding, response parsing, and
 error extraction. That keeps room actions simple: `fetchAvailableRooms`,
-`createRoom`, `joinRoom`, `reconnectRoom`, `leaveRoom`, and `fetchIceServers`
-each describe one backend operation and return typed client data. The lobby
-polls `fetchAvailableRooms` every five seconds and refreshes again after a stale
-join fails, while the backend remains responsible for enforcing room capacity.
-The frontend does not use cookies or server sessions; participant credentials
-are sent explicitly in request bodies for authenticated room operations.
+`createRoom`, `joinRoom`, `renameRoom`, `reconnectRoom`, `leaveRoom`, and
+`fetchIceServers` each describe one backend operation and return typed client
+data. The lobby polls `fetchAvailableRooms` every five seconds and refreshes
+again after a stale join fails, while the backend remains responsible for
+enforcing room capacity. Host rename requests send the participant ID, host
+token, and new room name; the backend validates host authority and then
+broadcasts a fresh room-state snapshot. The frontend does not use cookies or
+server sessions; participant credentials are sent explicitly in request bodies
+for authenticated room operations.
 
 #### <u>Browser WebSocket API</u>
 

@@ -7,6 +7,7 @@ MiniRTC is a 1:1 WebRTC calling product. Users enter a display name, browse avai
 - FastAPI backend with Postgres-backed room and participant state.
 - Available-room lobby endpoint for discovering live rooms with one active
   participant and one open slot.
+- Optional room names on creation, plus host-only room renaming.
 - WebSocket signaling for room-state broadcasts, presence, call lifecycle, SDP,
   and ICE candidates.
 - Peer-to-peer WebRTC media in the browser.
@@ -20,8 +21,8 @@ MiniRTC is a 1:1 WebRTC calling product. Users enter a display name, browse avai
   room-close confirmation.
 - Opaque participant and host tokens stored hashed in Postgres.
 - STUN/TURN config fetched from an authenticated backend endpoint.
-- React/Vite frontend with username entry, available-room lobby, room creation,
-  URL joining, call controls, media status, and reconnect-aware UI.
+- React/Vite frontend with username entry, available-room lobby, named room
+  creation, URL joining, call controls, media status, and reconnect-aware UI.
 - Alembic migration and focused backend unit tests.
 
 ## What Was Skipped
@@ -165,21 +166,22 @@ npm run build
 ## Manual Verification
 
 1. Open browser tab A, enter Alice as the username, and confirm the lobby loads.
-2. Create a new room from the lobby.
+2. Create a new room from the lobby, optionally providing a room name.
 3. Confirm the room connection status becomes connected and the participants list shows Alice.
-4. Copy the room URL.
-5. Open browser tab B, an incognito window, or another browser, enter Bob as the username, and confirm Alice's room appears in the available-room lobby.
-6. Join Alice's room from the lobby.
-7. Confirm both browsers show Alice and Bob without refresh.
-8. Confirm Start Call is hidden with one participant and visible once two active participants are present.
-9. Start a call from Alice and confirm Bob sees Join Call.
-10. Join the call from Bob.
-11. Verify each user sees their own local video and the other user's remote video.
-12. Toggle mute and camera. Camera-off should stop camera capture until it is turned back on.
-13. Refresh one tab and verify reconnect behavior.
-14. Try a third joiner and verify `ROOM_FULL`.
-15. Leave only the call and verify both users remain in the room.
-16. Leave the room as the final participant and verify the close-room prompt.
+4. Rename the room as Alice and confirm the room title updates.
+5. Copy the room URL.
+6. Open browser tab B, an incognito window, or another browser, enter Bob as the username, and confirm Alice's room appears in the available-room lobby by room name.
+7. Join Alice's room from the lobby.
+8. Confirm both browsers show Alice and Bob without refresh.
+9. Confirm Start Call is hidden with one participant and visible once two active participants are present.
+10. Start a call from Alice and confirm Bob sees Join Call.
+11. Join the call from Bob.
+12. Verify each user sees their own local video and the other user's remote video.
+13. Toggle mute and camera. Camera-off should stop camera capture until it is turned back on.
+14. Refresh one tab and verify reconnect behavior.
+15. Try a third joiner and verify `ROOM_FULL`.
+16. Leave only the call and verify both users remain in the room.
+17. Leave the room as the final participant and verify the close-room prompt.
 
 ## Browser And Network Notes
 
