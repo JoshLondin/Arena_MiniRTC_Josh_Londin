@@ -42,6 +42,23 @@ source of truth. The tradeoff is more reducer complexity and more discipline
 around WebSocket lifecycle. If the socket reconnects or misses an event, the app
 must always be able to repair itself from the next full room snapshot.
 
+#### <u>Lobby Discovery Uses Polling</u>
+
+**Decision:** The landing flow stores the user's display name in
+`sessionStorage`, then shows an available-room lobby backed by a REST endpoint
+that the frontend refreshes every five seconds.
+
+**Why:** The lobby only needs coarse discovery of rooms with one active
+participant and one open slot. Polling keeps the part-two feature small and
+avoids adding another realtime channel before the user joins a room.
+
+**Tradeoff:** Polling can be briefly stale. A room might fill just before a user
+clicks Join Room, so the backend still enforces capacity and the frontend
+refreshes the list after a failed join. At larger scale, this could become
+wasteful if many idle clients poll constantly; a production lobby could use
+server-sent events, a lobby WebSocket, cache-backed room summaries, or explicit
+pagination and search.
+
 #### <u>Signaling Status And Media Status Are Separate</u>
 
 **Decision:** The top room status represents WebSocket/signaling connectivity
@@ -328,11 +345,11 @@ rewrite rules would need to avoid intercepting API and WebSocket paths.
 **What it is:** [React](https://react.dev/) is a UI library for building
 interfaces from components and hooks.
 
-**How MiniRTC uses it:** React renders the create/join forms, room page,
-participant list, call controls, connection status, warning/error messages, and
-video panels. `App.tsx` coordinates the product flow, while components such as
-`RoomPage`, `VideoPanel`, `CallControls`, and `JoinRoomForm` stay focused on UI
-rendering.
+**How MiniRTC uses it:** React renders the username entry form, available-room
+lobby, room page, participant list, call controls, connection status,
+warning/error messages, and video panels. `App.tsx` coordinates the product
+flow, while components such as `LobbyPage`, `RoomPage`, `VideoPanel`,
+`CallControls`, and `JoinRoomForm` stay focused on UI rendering.
 
 Hooks isolate the parts of the app that talk to the outside world:
 `useRoom` wraps REST calls, `useWebSocket` owns the signaling socket,
@@ -390,11 +407,13 @@ reconnect, leave, and fetch ICE servers. Errors are normalized into user-facing
 messages from the backend error envelope.
 
 The small `requestJson` helper centralizes JSON encoding, response parsing, and
-error extraction. That keeps room actions simple: `createRoom`, `joinRoom`,
-`reconnectRoom`, `leaveRoom`, and `fetchIceServers` each describe one backend
-operation and return typed client data. The frontend does not use cookies or
-server sessions; participant credentials are sent explicitly in request bodies
-for authenticated room operations.
+error extraction. That keeps room actions simple: `fetchAvailableRooms`,
+`createRoom`, `joinRoom`, `reconnectRoom`, `leaveRoom`, and `fetchIceServers`
+each describe one backend operation and return typed client data. The lobby
+polls `fetchAvailableRooms` every five seconds and refreshes again after a stale
+join fails, while the backend remains responsible for enforcing room capacity.
+The frontend does not use cookies or server sessions; participant credentials
+are sent explicitly in request bodies for authenticated room operations.
 
 #### <u>Browser WebSocket API</u>
 
@@ -782,6 +801,11 @@ Postgres would also become too busy if every participant heartbeat writes to the
 database every few seconds. At 10k rooms/day, especially with many active rooms
 at once, heartbeat writes, stale participant scans, reconnect updates, and room
 cleanup queries would become a major source of load.
+
+The available-room lobby adds another scaling pressure: idle visitors poll for
+room summaries every five seconds. That is fine for the take-home demo, but a
+larger deployment would need caching, pagination, backoff, or a realtime lobby
+feed so room discovery does not repeatedly scan durable room state.
 
 TURN bandwidth is another pressure point. Peer-to-peer media is cheap for the
 backend, but TURN-relayed media is paid bandwidth. If a meaningful percentage of
