@@ -5,7 +5,7 @@ import type { AvailableRoom } from "../api/rooms";
 type LobbyPageProps = {
   username: string;
   loadAvailableRooms: () => Promise<AvailableRoom[]>;
-  onCreateRoom: () => Promise<void>;
+  onCreateRoom: (roomName?: string) => Promise<void>;
   onJoinRoom: (roomCode: string) => Promise<void>;
 };
 
@@ -21,6 +21,7 @@ export function LobbyPage({
   const [isLoading, setIsLoading] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
   const [joiningRoomCode, setJoiningRoomCode] = useState<string | null>(null);
+  const [roomName, setRoomName] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   const refreshRooms = useCallback(async (options: { preserveError?: boolean } = {}) => {
@@ -47,7 +48,7 @@ export function LobbyPage({
     setError(null);
     setIsCreating(true);
     try {
-      await onCreateRoom();
+      await onCreateRoom(roomName);
     } catch (createError) {
       setError(createError instanceof Error ? createError.message : "Unable to create a room.");
     } finally {
@@ -80,7 +81,22 @@ export function LobbyPage({
           <h1>Available Rooms</h1>
           <p className="subtle">Signed in as {username}</p>
         </div>
-        <div className="lobby-actions">
+        <form
+          className="lobby-actions"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void handleCreateRoom();
+          }}
+        >
+          <label className="lobby-room-name">
+            Room name
+            <input
+              value={roomName}
+              maxLength={60}
+              onChange={(event) => setRoomName(event.target.value)}
+              placeholder="Optional"
+            />
+          </label>
           <button
             type="button"
             className="secondary"
@@ -89,10 +105,10 @@ export function LobbyPage({
           >
             Refresh
           </button>
-          <button type="button" onClick={handleCreateRoom} disabled={isCreating}>
+          <button type="submit" disabled={isCreating}>
             {isCreating ? "Creating..." : "Create New Room"}
           </button>
-        </div>
+        </form>
       </header>
 
       {error ? <p className="error">{error}</p> : null}
@@ -108,8 +124,8 @@ export function LobbyPage({
         {rooms.map((room) => (
           <article key={room.roomCode} className="room-card">
             <div>
-              <h2>Room hosted by {room.hostUsername}</h2>
-              <p className="subtle">Room {room.roomCode}</p>
+              <h2>{room.roomName}</h2>
+              <p className="subtle">Hosted by {room.hostUsername}</p>
             </div>
             <div className="room-card-meta">
               <span>

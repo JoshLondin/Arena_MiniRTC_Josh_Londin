@@ -108,6 +108,7 @@ function renderWebRtc(sendMessage = vi.fn()) {
     api = useWebRTC({
       credentials: {
         roomCode: "ROOM12345678",
+        roomName: "Interview Prep",
         participantId: "alice-id",
         participantToken: "alice-token",
         username: "Alice"

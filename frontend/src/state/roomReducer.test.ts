@@ -6,6 +6,7 @@ function makeRoomState() {
   return {
     ...initialRoomState({
       roomCode: "ROOM12345678",
+      roomName: "Interview Prep",
       participantId: "alice-id",
       participantToken: "alice-token",
       username: "Alice"
@@ -19,6 +20,26 @@ function makeRoomState() {
 }
 
 describe("room reducer participant media state", () => {
+  it("updates room name from room state snapshots", () => {
+    const nextState = roomReducer(makeRoomState(), {
+      type: "ROOM_STATE_RECEIVED",
+      payload: {
+        room_name: "Renamed Room",
+        room_status: "READY_FOR_CALL",
+        reserved_participant_count: 2,
+        capacity: 2,
+        participants: [
+          { participant_id: "alice-id", username: "Alice", status: "ACTIVE" },
+          { participant_id: "bob-id", username: "Bob", status: "ACTIVE" }
+        ],
+        call_status: "IDLE",
+        call_host_participant_id: null
+      }
+    });
+
+    expect(nextState.roomName).toBe("Renamed Room");
+  });
+
   it("stores remote participant media state", () => {
     const nextState = roomReducer(makeRoomState(), {
       type: "PARTICIPANT_MEDIA_STATE",
@@ -133,6 +154,7 @@ describe("room reducer participant media state", () => {
     const nextState = roomReducer(state, {
       type: "ROOM_STATE_RECEIVED",
       payload: {
+        room_name: "Interview Prep",
         room_status: "WAITING_FOR_PARTICIPANT",
         reserved_participant_count: 1,
         capacity: 2,
@@ -157,6 +179,7 @@ describe("room reducer participant media state", () => {
     const nextState = roomReducer(state, {
       type: "ROOM_STATE_RECEIVED",
       payload: {
+        room_name: "Interview Prep",
         room_status: "CALL_PENDING",
         reserved_participant_count: 2,
         capacity: 2,

@@ -10,6 +10,7 @@ export type MediaStatus = "idle" | "preparing" | "connecting" | "connected" | "f
 
 export type RoomState = {
   roomCode: string;
+  roomName: string;
   participantId: string;
   participantToken: string;
   hostToken?: string;
@@ -64,6 +65,7 @@ export type RoomAction =
 export function initialRoomState(credentials: RoomCredentials): RoomState {
   return {
     roomCode: credentials.roomCode,
+    roomName: credentials.roomName ?? credentials.roomCode,
     participantId: credentials.participantId,
     participantToken: credentials.participantToken,
     hostToken: credentials.hostToken,
@@ -112,6 +114,7 @@ export function roomReducer(state: RoomState, action: RoomAction): RoomState {
             );
       return {
         ...state,
+        roomName: action.payload.room_name,
         roomStatus: action.payload.room_status,
         reservedParticipantCount: action.payload.reserved_participant_count,
         capacity: action.payload.capacity,

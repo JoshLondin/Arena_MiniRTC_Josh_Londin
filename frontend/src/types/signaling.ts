@@ -22,6 +22,7 @@ export type ParticipantMediaState = {
 };
 
 export type RoomStatePayload = {
+  room_name: string;
   room_status: RoomStatus;
   reserved_participant_count: number;
   capacity: 2;
@@ -93,6 +94,7 @@ export type ServerSignalingMessage =
 
 export type RoomCredentials = {
   roomCode: string;
+  roomName: string;
   participantId: string;
   participantToken: string;
   hostToken?: string;

@@ -11,6 +11,7 @@ afterEach(() => {
 function makeRoomState(overrides: Partial<RoomState> = {}): RoomState {
   return {
     roomCode: "ROOM12345678",
+    roomName: "Interview Prep",
     participantId: "alice-id",
     participantToken: "alice-token",
     username: "Alice",
@@ -55,6 +56,12 @@ const fakeLocalStream = {
 } as unknown as MediaStream;
 
 describe("RoomPage video labels", () => {
+  it("shows the room name in the page header", () => {
+    renderRoom(makeRoomState());
+
+    expect(screen.getByRole("heading", { name: "Interview Prep" })).toBeTruthy();
+  });
+
   it("centers participant names before the call starts", () => {
     renderRoom(makeRoomState());
 

@@ -86,7 +86,7 @@ export function RoomPage({
       <header className="topbar">
         <div>
           <p className="eyebrow">MiniRTC</p>
-          <h1>Room {state.roomCode}</h1>
+          <h1>{state.roomName}</h1>
         </div>
         <ConnectionStatus label="Room" status={state.connectionStatus} />
       </header>

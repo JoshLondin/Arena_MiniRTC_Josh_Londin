@@ -38,7 +38,10 @@ export function loadCredentials(roomCode?: string): RoomCredentials | null {
     if (roomCode && credentials.roomCode !== roomCode) {
       return null;
     }
-    return credentials;
+    return {
+      ...credentials,
+      roomName: credentials.roomName ?? credentials.roomCode
+    };
   } catch {
     return null;
   }
@@ -49,8 +52,8 @@ export function clearCredentials(): void {
 }
 
 export function useRoom() {
-  const create = useCallback(async (username: string) => {
-    const credentials = await createRoom(username);
+  const create = useCallback(async (username: string, roomName?: string) => {
+    const credentials = await createRoom(username, roomName);
     saveCredentials(credentials);
     history.pushState(null, "", `/room/${credentials.roomCode}`);
     return credentials;

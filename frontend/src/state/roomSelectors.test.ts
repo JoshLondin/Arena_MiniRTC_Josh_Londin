@@ -13,6 +13,7 @@ import {
 function makeRoomState(overrides: Partial<RoomState> = {}): RoomState {
   return {
     roomCode: "ROOM12345678",
+    roomName: "Interview Prep",
     participantId: "alice-id",
     participantToken: "alice-token",
     username: "Alice",

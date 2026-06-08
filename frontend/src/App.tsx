@@ -36,6 +36,7 @@ export function App() {
     roomReducer,
     credentials ?? {
       roomCode: requestedRoomCode ?? "",
+      roomName: requestedRoomCode ?? "",
       participantId: "",
       participantToken: "",
       username: ""
@@ -250,8 +251,8 @@ export function App() {
     [requestedRoomCode, roomApi]
   );
 
-  const createLobbyRoom = useCallback(async () => {
-    const nextCredentials = await roomApi.create(lobbyUsername);
+  const createLobbyRoom = useCallback(async (roomName?: string) => {
+    const nextCredentials = await roomApi.create(lobbyUsername, roomName);
     setIsSessionReady(false);
     setCredentials(nextCredentials);
     dispatch({ type: "BOOTSTRAP", payload: nextCredentials });

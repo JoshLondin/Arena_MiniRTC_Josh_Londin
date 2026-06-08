@@ -144,6 +144,18 @@ label {
   justify-content: flex-end;
 }
 
+.lobby-room-name {
+  color: #475569;
+  font-size: 0.8rem;
+  font-weight: 700;
+  gap: 4px;
+  min-width: 220px;
+}
+
+.lobby-room-name input {
+  margin-top: 4px;
+}
+
 .room-list {
   display: grid;
   gap: 12px;
@@ -416,5 +428,11 @@ label {
   .room-card-meta {
     align-items: start;
     flex-direction: column;
+  }
+
+  .lobby-actions,
+  .lobby-room-name {
+    align-items: stretch;
+    width: 100%;
   }
 }

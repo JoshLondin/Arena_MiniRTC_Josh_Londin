@@ -11,6 +11,7 @@ type ParticipantResponse = {
 
 type CreateRoomResponse = {
   room_code: string;
+  room_name: string;
   participant: ParticipantResponse;
   participant_token: string;
   host_token: string;
@@ -18,6 +19,7 @@ type CreateRoomResponse = {
 
 type JoinRoomResponse = {
   room_code: string;
+  room_name: string;
   participant: ParticipantResponse;
   participant_token: string;
   room_status: string;
@@ -26,6 +28,7 @@ type JoinRoomResponse = {
 
 export type AvailableRoom = {
   roomCode: string;
+  roomName: string;
   hostUsername: string;
   reservedParticipantCount: number;
   capacity: 2;
@@ -35,6 +38,7 @@ export type AvailableRoom = {
 
 type AvailableRoomResponse = {
   room_code: string;
+  room_name: string;
   host_username: string;
   reserved_participant_count: number;
   capacity: 2;
@@ -81,13 +85,15 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   return data;
 }
 
-export async function createRoom(username: string): Promise<RoomCredentials> {
+export async function createRoom(username: string, roomName?: string): Promise<RoomCredentials> {
+  const cleanRoomName = roomName?.trim();
   const response = await requestJson<CreateRoomResponse>("/rooms", {
     method: "POST",
-    body: JSON.stringify({ username })
+    body: JSON.stringify({ username, room_name: cleanRoomName || undefined })
   });
   return {
     roomCode: response.room_code,
+    roomName: response.room_name,
     participantId: response.participant.participant_id,
     participantToken: response.participant_token,
     hostToken: response.host_token,
@@ -102,6 +108,7 @@ export async function joinRoom(roomCode: string, username: string): Promise<Room
   });
   return {
     roomCode: response.room_code,
+    roomName: response.room_name,
     participantId: response.participant.participant_id,
     participantToken: response.participant_token,
     username: response.participant.username
@@ -112,6 +119,7 @@ export async function fetchAvailableRooms(): Promise<AvailableRoom[]> {
   const response = await requestJson<AvailableRoomsResponse>("/rooms/available");
   return response.rooms.map((room) => ({
     roomCode: room.room_code,
+    roomName: room.room_name,
     hostUsername: room.host_username,
     reservedParticipantCount: room.reserved_participant_count,
     capacity: room.capacity,

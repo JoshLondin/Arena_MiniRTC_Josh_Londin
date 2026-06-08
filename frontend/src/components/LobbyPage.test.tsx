@@ -12,6 +12,7 @@ afterEach(() => {
 function makeRoom(overrides: Partial<AvailableRoom> = {}): AvailableRoom {
   return {
     roomCode: "ROOM12345678",
+    roomName: "Interview Prep",
     hostUsername: "Alice",
     reservedParticipantCount: 1,
     capacity: 2,
@@ -23,7 +24,7 @@ function makeRoom(overrides: Partial<AvailableRoom> = {}): AvailableRoom {
 
 function renderLobby(overrides: {
   loadAvailableRooms?: () => Promise<AvailableRoom[]>;
-  onCreateRoom?: () => Promise<void>;
+  onCreateRoom?: (roomName?: string) => Promise<void>;
   onJoinRoom?: (roomCode: string) => Promise<void>;
 } = {}) {
   const props = {
@@ -54,7 +55,9 @@ describe("LobbyPage", () => {
       onJoinRoom
     });
 
-    expect(await screen.findByText("Room hosted by Alice")).toBeTruthy();
+    expect(await screen.findByText("Interview Prep")).toBeTruthy();
+    expect(screen.getByText("Hosted by Alice")).toBeTruthy();
+    expect(screen.queryByText("Room ROOM12345678")).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "Join Room" }));
 
@@ -67,7 +70,19 @@ describe("LobbyPage", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Create New Room" }));
 
-    await waitFor(() => expect(onCreateRoom).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(onCreateRoom).toHaveBeenCalledWith(""));
+  });
+
+  it("sends an optional room name when creating a room", async () => {
+    const onCreateRoom = vi.fn().mockResolvedValue(undefined);
+    renderLobby({ onCreateRoom });
+
+    fireEvent.change(screen.getByLabelText("Room name"), {
+      target: { value: "Pairing Room" }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Create New Room" }));
+
+    await waitFor(() => expect(onCreateRoom).toHaveBeenCalledWith("Pairing Room"));
   });
 
   it("polls available rooms every five seconds", async () => {
@@ -92,7 +107,7 @@ describe("LobbyPage", () => {
     const onJoinRoom = vi.fn().mockRejectedValue(new Error("Room is full."));
     renderLobby({ loadAvailableRooms, onJoinRoom });
 
-    expect(await screen.findByText("Room hosted by Alice")).toBeTruthy();
+    expect(await screen.findByText("Interview Prep")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Join Room" }));
 
