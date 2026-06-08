@@ -1,9 +1,16 @@
 import { useCallback, useEffect, useMemo, useReducer, useState } from "react";
 
 import { JoinRoomForm } from "./components/JoinRoomForm";
+import { LobbyPage } from "./components/LobbyPage";
 import { RoomPage } from "./components/RoomPage";
 import { useMediaDevices } from "./hooks/useMediaDevices";
-import { clearCredentials, loadCredentials, saveCredentials, useRoom } from "./hooks/useRoom";
+import {
+  clearCredentials,
+  loadCredentials,
+  loadUsername,
+  saveUsername,
+  useRoom
+} from "./hooks/useRoom";
 import { useWebRTC } from "./hooks/useWebRTC";
 import { useWebSocket } from "./hooks/useWebSocket";
 import { initialRoomState, roomReducer } from "./state/roomReducer";
@@ -23,6 +30,7 @@ export function App() {
   const [credentials, setCredentials] = useState<RoomCredentials | null>(() =>
     loadCredentials(requestedRoomCode ?? undefined)
   );
+  const [lobbyUsername, setLobbyUsername] = useState(() => loadUsername());
   const [isSessionReady, setIsSessionReady] = useState(false);
   const [state, dispatch] = useReducer(
     roomReducer,
@@ -223,16 +231,11 @@ export function App() {
     };
   }, [credentials]);
 
-  const create = useCallback(
-    async (username: string) => {
-      const nextCredentials = await roomApi.create(username);
-      saveCredentials(nextCredentials);
-      setIsSessionReady(false);
-      setCredentials(nextCredentials);
-      dispatch({ type: "BOOTSTRAP", payload: nextCredentials });
-    },
-    [roomApi]
-  );
+  const enterLobby = useCallback(async (username: string) => {
+    const cleanUsername = username.trim();
+    saveUsername(cleanUsername);
+    setLobbyUsername(cleanUsername);
+  }, []);
 
   const join = useCallback(
     async (username: string) => {
@@ -245,6 +248,24 @@ export function App() {
       dispatch({ type: "BOOTSTRAP", payload: nextCredentials });
     },
     [requestedRoomCode, roomApi]
+  );
+
+  const createLobbyRoom = useCallback(async () => {
+    const nextCredentials = await roomApi.create(lobbyUsername);
+    setIsSessionReady(false);
+    setCredentials(nextCredentials);
+    dispatch({ type: "BOOTSTRAP", payload: nextCredentials });
+  }, [lobbyUsername, roomApi]);
+
+  const joinLobbyRoom = useCallback(
+    async (roomCode: string) => {
+      const nextCredentials = await roomApi.join(roomCode, lobbyUsername);
+      history.pushState(null, "", `/room/${nextCredentials.roomCode}`);
+      setIsSessionReady(false);
+      setCredentials(nextCredentials);
+      dispatch({ type: "BOOTSTRAP", payload: nextCredentials });
+    },
+    [lobbyUsername, roomApi]
   );
 
   const prepareMedia = useCallback(async () => {
@@ -346,5 +367,16 @@ export function App() {
     return <JoinRoomForm mode="join" roomCode={requestedRoomCode} onSubmit={join} />;
   }
 
-  return <JoinRoomForm mode="create" onSubmit={create} />;
+  if (lobbyUsername) {
+    return (
+      <LobbyPage
+        username={lobbyUsername}
+        loadAvailableRooms={roomApi.availableRooms}
+        onCreateRoom={createLobbyRoom}
+        onJoinRoom={joinLobbyRoom}
+      />
+    );
+  }
+
+  return <JoinRoomForm mode="username" onSubmit={enterLobby} />;
 }

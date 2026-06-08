@@ -1,7 +1,7 @@
 import { FormEvent, useState } from "react";
 
 type JoinRoomFormProps = {
-  mode: "create" | "join";
+  mode: "create" | "join" | "username";
   roomCode?: string;
   onSubmit: (username: string) => Promise<void>;
 };
@@ -28,7 +28,7 @@ export function JoinRoomForm({ mode, roomCode, onSubmit }: JoinRoomFormProps) {
     <main className="entry">
       <section className="entry-panel">
         <p className="eyebrow">MiniRTC</p>
-        <h1>{mode === "create" ? "Create a room" : "Join room"}</h1>
+        <h1>{mode === "create" ? "Create a room" : mode === "join" ? "Join room" : "Enter your name"}</h1>
         {roomCode ? <p className="subtle">Room {roomCode}</p> : null}
         <form onSubmit={handleSubmit} className="form-stack">
           <label>
@@ -43,11 +43,16 @@ export function JoinRoomForm({ mode, roomCode, onSubmit }: JoinRoomFormProps) {
           </label>
           {error ? <p className="error">{error}</p> : null}
           <button type="submit" disabled={isSubmitting || !username.trim()}>
-            {isSubmitting ? "Working..." : mode === "create" ? "Create Room" : "Join Room"}
+            {isSubmitting
+              ? "Working..."
+              : mode === "create"
+                ? "Create Room"
+                : mode === "join"
+                  ? "Join Room"
+                  : "Continue"}
           </button>
         </form>
       </section>
     </main>
   );
 }
-

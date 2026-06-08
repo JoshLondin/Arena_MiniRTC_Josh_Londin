@@ -24,6 +24,28 @@ type JoinRoomResponse = {
   reserved_participant_count: number;
 };
 
+export type AvailableRoom = {
+  roomCode: string;
+  hostUsername: string;
+  reservedParticipantCount: number;
+  capacity: 2;
+  roomStatus: string;
+  createdAt: string;
+};
+
+type AvailableRoomResponse = {
+  room_code: string;
+  host_username: string;
+  reserved_participant_count: number;
+  capacity: 2;
+  room_status: string;
+  created_at: string;
+};
+
+type AvailableRoomsResponse = {
+  rooms: AvailableRoomResponse[];
+};
+
 export type ReconnectResponse = {
   participant_id: string;
   room_code: string;
@@ -86,6 +108,18 @@ export async function joinRoom(roomCode: string, username: string): Promise<Room
   };
 }
 
+export async function fetchAvailableRooms(): Promise<AvailableRoom[]> {
+  const response = await requestJson<AvailableRoomsResponse>("/rooms/available");
+  return response.rooms.map((room) => ({
+    roomCode: room.room_code,
+    hostUsername: room.host_username,
+    reservedParticipantCount: room.reserved_participant_count,
+    capacity: room.capacity,
+    roomStatus: room.room_status,
+    createdAt: room.created_at
+  }));
+}
+
 export async function reconnectRoom(credentials: RoomCredentials): Promise<ReconnectResponse> {
   return requestJson<ReconnectResponse>(`/rooms/${credentials.roomCode}/reconnect`, {
     method: "POST",
@@ -116,4 +150,3 @@ export async function fetchIceServers(credentials: RoomCredentials): Promise<RTC
   });
   return response.ice_servers;
 }
-
