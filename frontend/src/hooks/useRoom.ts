@@ -7,6 +7,7 @@ import {
   joinRoom,
   leaveRoom,
   reconnectRoom,
+  renameRoom,
   type AvailableRoom,
   type ReconnectResponse
 } from "../api/rooms";
@@ -79,9 +80,13 @@ export function useRoom() {
     return result;
   }, []);
 
+  const rename = useCallback(async (credentials: RoomCredentials, roomName: string) => {
+    return renameRoom(credentials, roomName);
+  }, []);
+
   const iceServers = useCallback(async (credentials: RoomCredentials) => {
     return fetchIceServers(credentials);
   }, []);
 
-  return { create, join, reconnect, leave, iceServers, availableRooms };
+  return { create, join, reconnect, leave, rename, iceServers, availableRooms };
 }

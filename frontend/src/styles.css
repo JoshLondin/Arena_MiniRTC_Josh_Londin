@@ -209,6 +209,37 @@ label {
   gap: 16px;
 }
 
+.room-title-row {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.rename-room-form {
+  align-items: end;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.rename-room-form label {
+  color: #475569;
+  font-size: 0.8rem;
+  font-weight: 700;
+  min-width: 240px;
+}
+
+.rename-room-form input {
+  margin-top: 4px;
+}
+
+.rename-room-form .error {
+  flex-basis: 100%;
+  margin: 0;
+}
+
 .workspace {
   display: grid;
   gap: 20px;

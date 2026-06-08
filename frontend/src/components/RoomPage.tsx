@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 
 import type { RoomState } from "../state/roomReducer";
 import {
@@ -19,6 +19,7 @@ type RoomPageProps = {
   onLeaveRoom: () => Promise<void>;
   onToggleMute: () => void;
   onToggleCamera: () => void;
+  onRenameRoom: (roomName: string) => Promise<void>;
 };
 
 export function RoomPage({
@@ -28,9 +29,14 @@ export function RoomPage({
   onLeaveCall,
   onLeaveRoom,
   onToggleMute,
-  onToggleCamera
+  onToggleCamera,
+  onRenameRoom
 }: RoomPageProps) {
   const [hasCopiedShareUrl, setHasCopiedShareUrl] = useState(false);
+  const [isRenamingRoom, setIsRenamingRoom] = useState(false);
+  const [roomNameDraft, setRoomNameDraft] = useState(state.roomName);
+  const [renameError, setRenameError] = useState<string | null>(null);
+  const [isSavingRoomName, setIsSavingRoomName] = useState(false);
   const shareUrlInputRef = useRef<HTMLInputElement | null>(null);
   const shareUrl = `${location.origin}/room/${state.roomCode}`;
   const currentParticipant = selectCurrentParticipant(state);
@@ -70,6 +76,12 @@ export function RoomPage({
     return () => window.clearTimeout(timeout);
   }, [hasCopiedShareUrl]);
 
+  useEffect(() => {
+    if (!isRenamingRoom) {
+      setRoomNameDraft(state.roomName);
+    }
+  }, [isRenamingRoom, state.roomName]);
+
   const copyShareUrl = async () => {
     if (navigator.clipboard) {
       await navigator.clipboard.writeText(shareUrl);
@@ -81,12 +93,69 @@ export function RoomPage({
     setHasCopiedShareUrl(true);
   };
 
+  const beginRenameRoom = () => {
+    setRoomNameDraft(state.roomName);
+    setRenameError(null);
+    setIsRenamingRoom(true);
+  };
+
+  const cancelRenameRoom = () => {
+    setRoomNameDraft(state.roomName);
+    setRenameError(null);
+    setIsRenamingRoom(false);
+  };
+
+  const submitRenameRoom = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const cleanRoomName = roomNameDraft.trim();
+    if (!cleanRoomName) {
+      setRenameError("Room name cannot be blank.");
+      return;
+    }
+    setRenameError(null);
+    setIsSavingRoomName(true);
+    try {
+      await onRenameRoom(cleanRoomName);
+      setIsRenamingRoom(false);
+    } catch (error) {
+      setRenameError(error instanceof Error ? error.message : "Unable to rename room.");
+    } finally {
+      setIsSavingRoomName(false);
+    }
+  };
+
   return (
     <main className="room-shell">
       <header className="topbar">
         <div>
           <p className="eyebrow">MiniRTC</p>
-          <h1>{state.roomName}</h1>
+          <div className="room-title-row">
+            <h1>{state.roomName}</h1>
+            {state.hostToken ? (
+              <button type="button" className="secondary" onClick={beginRenameRoom}>
+                Rename
+              </button>
+            ) : null}
+          </div>
+          {state.hostToken && isRenamingRoom ? (
+            <form className="rename-room-form" onSubmit={submitRenameRoom}>
+              <label>
+                Room name
+                <input
+                  value={roomNameDraft}
+                  maxLength={60}
+                  onChange={(event) => setRoomNameDraft(event.target.value)}
+                />
+              </label>
+              <button type="submit" disabled={isSavingRoomName}>
+                {isSavingRoomName ? "Saving..." : "Save"}
+              </button>
+              <button type="button" className="secondary" onClick={cancelRenameRoom}>
+                Cancel
+              </button>
+              {renameError ? <p className="error">{renameError}</p> : null}
+            </form>
+          ) : null}
         </div>
         <ConnectionStatus label="Room" status={state.connectionStatus} />
       </header>

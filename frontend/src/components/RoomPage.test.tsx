@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { RoomState } from "../state/roomReducer";
@@ -38,6 +38,7 @@ function makeRoomState(overrides: Partial<RoomState> = {}): RoomState {
 }
 
 function renderRoom(state: RoomState) {
+  const onRenameRoom = vi.fn().mockResolvedValue(undefined);
   return render(
     <RoomPage
       state={state}
@@ -47,6 +48,7 @@ function renderRoom(state: RoomState) {
       onLeaveRoom={vi.fn()}
       onToggleMute={vi.fn()}
       onToggleCamera={vi.fn()}
+      onRenameRoom={onRenameRoom}
     />
   );
 }
@@ -60,6 +62,51 @@ describe("RoomPage video labels", () => {
     renderRoom(makeRoomState());
 
     expect(screen.getByRole("heading", { name: "Interview Prep" })).toBeTruthy();
+  });
+
+  it("shows rename controls only for the host", () => {
+    const hostRender = renderRoom(makeRoomState({ hostToken: "host-token" }));
+
+    expect(screen.getByRole("button", { name: "Rename" })).toBeTruthy();
+
+    hostRender.unmount();
+    renderRoom(makeRoomState({ hostToken: undefined }));
+
+    expect(screen.queryByRole("button", { name: "Rename" })).toBeNull();
+  });
+
+  it("rejects blank room names before saving", async () => {
+    renderRoom(makeRoomState({ hostToken: "host-token" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Rename" }));
+    fireEvent.change(screen.getByLabelText("Room name"), { target: { value: "   " } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(await screen.findByText("Room name cannot be blank.")).toBeTruthy();
+  });
+
+  it("saves a host room rename", async () => {
+    const onRenameRoom = vi.fn().mockResolvedValue(undefined);
+    render(
+      <RoomPage
+        state={makeRoomState({ hostToken: "host-token" })}
+        onStartCall={vi.fn()}
+        onJoinCall={vi.fn()}
+        onLeaveCall={vi.fn()}
+        onLeaveRoom={vi.fn()}
+        onToggleMute={vi.fn()}
+        onToggleCamera={vi.fn()}
+        onRenameRoom={onRenameRoom}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Rename" }));
+    fireEvent.change(screen.getByLabelText("Room name"), {
+      target: { value: "Design Review" }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(onRenameRoom).toHaveBeenCalledWith("Design Review"));
   });
 
   it("centers participant names before the call starts", () => {

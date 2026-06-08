@@ -50,6 +50,10 @@ type AvailableRoomsResponse = {
   rooms: AvailableRoomResponse[];
 };
 
+type RenameRoomResponse = {
+  room_name: string;
+};
+
 export type ReconnectResponse = {
   participant_id: string;
   room_code: string;
@@ -146,6 +150,24 @@ export async function leaveRoom(credentials: RoomCredentials): Promise<{ left: b
       participant_token: credentials.participantToken
     })
   });
+}
+
+export async function renameRoom(
+  credentials: RoomCredentials,
+  roomName: string
+): Promise<string> {
+  if (!credentials.hostToken) {
+    throw new Error("Only the room host can rename this room.");
+  }
+  const response = await requestJson<RenameRoomResponse>(`/rooms/${credentials.roomCode}/name`, {
+    method: "PATCH",
+    body: JSON.stringify({
+      participant_id: credentials.participantId,
+      host_token: credentials.hostToken,
+      room_name: roomName
+    })
+  });
+  return response.room_name;
 }
 
 export async function fetchIceServers(credentials: RoomCredentials): Promise<RTCIceServer[]> {

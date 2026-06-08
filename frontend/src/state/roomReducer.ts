@@ -52,6 +52,7 @@ export type RoomAction =
   | { type: "CALL_JOINED"; payload: { call_host_participant_id: string; room_status: "NEGOTIATING" } }
   | { type: "CALL_ENDED"; payload: { reason: string } }
   | { type: "ROOM_DELETED"; payload: { reason: string } }
+  | { type: "ROOM_RENAMED"; payload: { roomName: string } }
   | { type: "SET_CONNECTION_STATUS"; payload: ConnectionStatus }
   | { type: "SET_MEDIA_STATUS"; payload: MediaStatus }
   | { type: "SET_MUTED"; payload: boolean }
@@ -240,6 +241,12 @@ export function roomReducer(state: RoomState, action: RoomAction): RoomState {
         participantMediaStates: {},
         localStream: null,
         remoteStream: null
+      };
+    case "ROOM_RENAMED":
+      return {
+        ...state,
+        roomName: action.payload.roomName,
+        error: null
       };
     case "SET_CONNECTION_STATUS":
       return { ...state, connectionStatus: action.payload };

@@ -324,6 +324,17 @@ export function App() {
     history.pushState(null, "", "/");
   }, [credentials, roomApi, state, webRtc]);
 
+  const renameCurrentRoom = useCallback(
+    async (roomName: string) => {
+      if (!credentials) {
+        return;
+      }
+      const nextRoomName = await roomApi.rename(credentials, roomName);
+      dispatch({ type: "ROOM_RENAMED", payload: { roomName: nextRoomName } });
+    },
+    [credentials, roomApi]
+  );
+
   const toggleCamera = useCallback(async () => {
     if (state.isCameraEnabled) {
       await webRtc.disableCamera();
@@ -356,9 +367,19 @@ export function App() {
         onLeaveRoom={leaveCurrentRoom}
         onToggleMute={() => dispatch({ type: "SET_MUTED", payload: !state.isMuted })}
         onToggleCamera={toggleCamera}
+        onRenameRoom={renameCurrentRoom}
       />
     );
-  }, [credentials, joinCall, leaveCall, leaveCurrentRoom, startCall, state, toggleCamera]);
+  }, [
+    credentials,
+    joinCall,
+    leaveCall,
+    leaveCurrentRoom,
+    renameCurrentRoom,
+    startCall,
+    state,
+    toggleCamera
+  ]);
 
   if (roomPage) {
     return roomPage;

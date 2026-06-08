@@ -40,6 +40,15 @@ describe("room reducer participant media state", () => {
     expect(nextState.roomName).toBe("Renamed Room");
   });
 
+  it("updates room name after a successful local rename", () => {
+    const nextState = roomReducer(makeRoomState(), {
+      type: "ROOM_RENAMED",
+      payload: { roomName: "Design Review" }
+    });
+
+    expect(nextState.roomName).toBe("Design Review");
+  });
+
   it("stores remote participant media state", () => {
     const nextState = roomReducer(makeRoomState(), {
       type: "PARTICIPANT_MEDIA_STATE",
