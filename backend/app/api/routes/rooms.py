@@ -6,6 +6,8 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.schemas import (
+    AvailableRoomResponse,
+    AvailableRoomsResponse,
     CreateRoomRequest,
     CreateRoomResponse,
     DeleteRoomRequest,
@@ -57,6 +59,17 @@ async def join_room(
     )
     await signaling_service.broadcast_room_state(room_code=room_code, state=state)
     return JoinRoomResponse.model_validate(result, from_attributes=True)
+
+
+@router.get("/available", response_model=AvailableRoomsResponse)
+async def list_available_rooms(session: SessionDep) -> AvailableRoomsResponse:
+    rooms = await room_service.list_available_rooms(session)
+    return AvailableRoomsResponse(
+        rooms=[
+            AvailableRoomResponse.model_validate(room, from_attributes=True)
+            for room in rooms
+        ]
+    )
 
 
 @router.get("/{room_code}", response_model=PublicRoomResponse)

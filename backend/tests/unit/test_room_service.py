@@ -78,6 +78,70 @@ async def test_join_room_rejects_third_participant(session_factory, room_service
             await room_service.join_room(session, room_code=created.room_code, username="Carol")
 
 
+async def test_available_rooms_include_room_with_one_active_participant(
+    session_factory,
+    room_service,
+):
+    async with session_factory() as session:
+        created = await room_service.create_room(session, username="Alice")
+        rooms = await room_service.list_available_rooms(session)
+
+    assert [room.room_code for room in rooms] == [created.room_code]
+    assert rooms[0].host_username == "Alice"
+    assert rooms[0].reserved_participant_count == 1
+    assert rooms[0].capacity == 2
+
+
+async def test_available_rooms_exclude_full_room(session_factory, room_service):
+    async with session_factory() as session:
+        created = await room_service.create_room(session, username="Alice")
+        await room_service.join_room(session, room_code=created.room_code, username="Bob")
+        rooms = await room_service.list_available_rooms(session)
+
+    assert rooms == []
+
+
+async def test_available_rooms_exclude_room_with_reserved_disconnected_slot(
+    session_factory,
+    room_service,
+):
+    async with session_factory() as session:
+        created = await room_service.create_room(session, username="Alice")
+        joined = await room_service.join_room(session, room_code=created.room_code, username="Bob")
+        await room_service.mark_participant_disconnected(
+            session,
+            room_code=created.room_code,
+            participant_id=joined.participant.participant_id,
+        )
+        rooms = await room_service.list_available_rooms(session)
+
+    assert rooms == []
+
+
+async def test_available_rooms_include_room_after_disconnected_slot_expires(
+    session_factory,
+    room_service,
+):
+    async with session_factory() as session:
+        created = await room_service.create_room(session, username="Alice")
+        joined = await room_service.join_room(session, room_code=created.room_code, username="Bob")
+        await room_service.mark_participant_disconnected(
+            session,
+            room_code=created.room_code,
+            participant_id=joined.participant.participant_id,
+        )
+        await session.execute(
+            update(Participant)
+            .where(Participant.id == joined.participant.participant_id)
+            .values(reconnect_deadline_at=room_service._now())
+        )
+        await session.commit()
+        rooms = await room_service.list_available_rooms(session)
+
+    assert [room.room_code for room in rooms] == [created.room_code]
+    assert rooms[0].host_username == "Alice"
+
+
 async def test_host_delete_deletes_room(session_factory, room_service):
     async with session_factory() as session:
         created = await room_service.create_room(session, username="Alice")

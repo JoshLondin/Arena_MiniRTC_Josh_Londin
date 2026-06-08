@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
@@ -109,6 +110,19 @@ class PublicRoomResponse(BaseModel):
     reserved_participant_count: int
     capacity: Literal[2]
     call_status: CallStatusLiteral
+
+
+class AvailableRoomResponse(BaseModel):
+    room_code: str
+    host_username: str
+    reserved_participant_count: int
+    capacity: Literal[2]
+    room_status: RoomStatusLiteral
+    created_at: datetime
+
+
+class AvailableRoomsResponse(BaseModel):
+    rooms: list[AvailableRoomResponse]
 
 
 class IceServer(BaseModel):

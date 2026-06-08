@@ -72,6 +72,16 @@ class RoomStatePayload:
 
 
 @dataclass(slots=True)
+class AvailableRoomDTO:
+    room_code: str
+    host_username: str
+    reserved_participant_count: int
+    capacity: int
+    room_status: str
+    created_at: datetime
+
+
+@dataclass(slots=True)
 class DeleteRoomResult:
     deleted: bool
 
@@ -250,6 +260,57 @@ class RoomService:
         if room is None:
             raise RoomNotFoundError()
         return await self._room_state_payload(session, room=room)
+
+    async def list_available_rooms(self, session: AsyncSession) -> list[AvailableRoomDTO]:
+        now = self._now()
+        available_rooms: list[AvailableRoomDTO] = []
+
+        async with session.begin():
+            rooms = await self.repository.list_rooms(session)
+            for room in rooms:
+                await self.repository.remove_expired_disconnected_participants_for_room(
+                    session,
+                    room_id=room.id,
+                    now=now,
+                )
+                participants = await self.repository.list_room_participants(
+                    session,
+                    room_id=room.id,
+                )
+                if not participants:
+                    await self.repository.delete_room(session, room_id=room.id)
+                    continue
+
+                active_participants = [
+                    participant
+                    for participant in participants
+                    if participant.status == ParticipantStatus.ACTIVE.value
+                ]
+                reserved_participants = [
+                    participant
+                    for participant in participants
+                    if participant.status == ParticipantStatus.ACTIVE.value
+                    or (
+                        participant.status == ParticipantStatus.DISCONNECTED.value
+                        and participant.reconnect_deadline_at is not None
+                        and self._is_future(participant.reconnect_deadline_at, now)
+                    )
+                ]
+                if len(active_participants) != 1 or len(reserved_participants) >= 2:
+                    continue
+
+                available_rooms.append(
+                    AvailableRoomDTO(
+                        room_code=room.room_code,
+                        host_username=active_participants[0].username,
+                        reserved_participant_count=len(reserved_participants),
+                        capacity=2,
+                        room_status=room.status,
+                        created_at=room.created_at,
+                    )
+                )
+
+        return available_rooms
 
     async def start_call(
         self,

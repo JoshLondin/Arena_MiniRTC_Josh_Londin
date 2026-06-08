@@ -98,6 +98,10 @@ class RoomRepository:
         )
         return result.scalar_one_or_none()
 
+    async def list_rooms(self, session: AsyncSession) -> list[Room]:
+        result = await session.execute(select(Room).order_by(Room.created_at))
+        return list(result.scalars().all())
+
     async def list_room_participants(
         self,
         session: AsyncSession,
