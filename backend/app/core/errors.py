@@ -52,6 +52,24 @@ class CallAlreadyStartedError(AppError):
         )
 
 
+class RoomNameRequiredError(AppError):
+    def __init__(self) -> None:
+        super().__init__(
+            "ROOM_NAME_REQUIRED",
+            "Room name cannot be blank.",
+            status.HTTP_400_BAD_REQUEST,
+        )
+
+
+class RoomNameTooLongError(AppError):
+    def __init__(self) -> None:
+        super().__init__(
+            "ROOM_NAME_TOO_LONG",
+            "Room name must be 60 characters or fewer.",
+            status.HTTP_400_BAD_REQUEST,
+        )
+
+
 def error_payload(error: AppError) -> dict[str, dict[str, str]]:
     return {"error": {"code": error.code, "message": error.message}}
 
@@ -69,4 +87,3 @@ async def validation_error_handler(_: Request, exc: ValidationError) -> JSONResp
 
 def install_error_handlers(app: FastAPI) -> None:
     app.add_exception_handler(AppError, app_error_handler)
-

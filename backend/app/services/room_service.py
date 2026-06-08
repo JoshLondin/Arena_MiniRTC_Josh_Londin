@@ -13,6 +13,8 @@ from app.core.errors import (
     InvalidHostTokenError,
     InvalidParticipantError,
     RoomFullError,
+    RoomNameRequiredError,
+    RoomNameTooLongError,
     RoomNotFoundError,
 )
 from app.core.security import generate_opaque_token, generate_room_code, hash_token, verify_token
@@ -38,6 +40,7 @@ class ParticipantDTO:
 @dataclass(slots=True)
 class CreateRoomResult:
     room_code: str
+    room_name: str
     participant: ParticipantDTO
     participant_token: str
     host_token: str
@@ -46,6 +49,7 @@ class CreateRoomResult:
 @dataclass(slots=True)
 class JoinRoomResult:
     room_code: str
+    room_name: str
     participant: ParticipantDTO
     participant_token: str
     room_status: str
@@ -55,6 +59,7 @@ class JoinRoomResult:
 @dataclass(slots=True)
 class PublicRoomState:
     room_code: str
+    room_name: str
     status: str
     reserved_participant_count: int
     capacity: int
@@ -63,6 +68,7 @@ class PublicRoomState:
 
 @dataclass(slots=True)
 class RoomStatePayload:
+    room_name: str
     room_status: str
     reserved_participant_count: int
     capacity: int
@@ -74,6 +80,7 @@ class RoomStatePayload:
 @dataclass(slots=True)
 class AvailableRoomDTO:
     room_code: str
+    room_name: str
     host_username: str
     reserved_participant_count: int
     capacity: int
@@ -84,6 +91,12 @@ class AvailableRoomDTO:
 @dataclass(slots=True)
 class DeleteRoomResult:
     deleted: bool
+
+
+@dataclass(slots=True)
+class RenameRoomResult:
+    room_name: str
+    room_state: RoomStatePayload
 
 
 @dataclass(slots=True)
@@ -126,7 +139,13 @@ class RoomService:
     def __init__(self, repository: RoomRepository | None = None) -> None:
         self.repository = repository or RoomRepository()
 
-    async def create_room(self, session: AsyncSession, *, username: str) -> CreateRoomResult:
+    async def create_room(
+        self,
+        session: AsyncSession,
+        *,
+        username: str,
+        room_name: str | None = None,
+    ) -> CreateRoomResult:
         clean_username = self._clean_username(username)
         host_token = generate_opaque_token()
         participant_token = generate_opaque_token()
@@ -134,10 +153,12 @@ class RoomService:
         for attempt in range(3):
             room_code = generate_room_code()
             try:
+                clean_room_name = self._clean_room_name_for_create(room_name, room_code=room_code)
                 async with session.begin():
                     room = await self.repository.create_room(
                         session,
                         room_code=room_code,
+                        name=clean_room_name,
                         host_token_hash=hash_token(host_token),
                     )
                     participant = await self.repository.create_participant(
@@ -159,6 +180,7 @@ class RoomService:
                     )
                 return CreateRoomResult(
                     room_code=room_code,
+                    room_name=clean_room_name,
                     participant=ParticipantDTO(
                         participant_id=participant.id,
                         username=participant.username,
@@ -223,6 +245,7 @@ class RoomService:
 
         return JoinRoomResult(
             room_code=room_code,
+            room_name=room.name,
             participant=ParticipantDTO(
                 participant_id=participant.id,
                 username=participant.username,
@@ -244,6 +267,7 @@ class RoomService:
         )
         return PublicRoomState(
             room_code=room.room_code,
+            room_name=room.name,
             status=room.status,
             reserved_participant_count=count,
             capacity=2,
@@ -302,6 +326,7 @@ class RoomService:
                 available_rooms.append(
                     AvailableRoomDTO(
                         room_code=room.room_code,
+                        room_name=room.name,
                         host_username=active_participants[0].username,
                         reserved_participant_count=len(reserved_participants),
                         capacity=2,
@@ -490,6 +515,34 @@ class RoomService:
                 raise InvalidHostTokenError()
             await self.repository.delete_room(session, room_id=room.id)
         return DeleteRoomResult(deleted=True)
+
+    async def rename_room_by_host(
+        self,
+        session: AsyncSession,
+        *,
+        room_code: str,
+        participant_id: UUID,
+        host_token: str,
+        room_name: str,
+    ) -> RenameRoomResult:
+        clean_room_name = self._clean_room_name_for_rename(room_name)
+        async with session.begin():
+            room = await self.repository.get_room_by_code_for_update(session, room_code=room_code)
+            if room is None:
+                raise RoomNotFoundError()
+            if not verify_token(host_token, room.host_token_hash):
+                raise InvalidHostTokenError()
+            if room.host_participant_id != participant_id:
+                raise InvalidHostTokenError()
+
+            await self.repository.update_room_name(
+                session,
+                room_id=room.id,
+                name=clean_room_name,
+            )
+            room.name = clean_room_name
+            payload = await self._room_state_payload(session, room=room)
+        return RenameRoomResult(room_name=clean_room_name, room_state=payload)
 
     async def leave_room(
         self,
@@ -883,6 +936,7 @@ class RoomService:
             )
         ]
         return RoomStatePayload(
+            room_name=room.name,
             room_status=room.status,
             reserved_participant_count=len(reserved),
             capacity=2,
@@ -905,6 +959,24 @@ class RoomService:
             raise ValueError("Username is required.")
         if len(clean) > 40:
             raise ValueError("Username must be 40 characters or fewer.")
+        return clean
+
+    def _clean_room_name_for_create(self, room_name: str | None, *, room_code: str) -> str:
+        if room_name is None:
+            return room_code
+        clean = room_name.strip()
+        if not clean:
+            return room_code
+        if len(clean) > 60:
+            raise RoomNameTooLongError()
+        return clean
+
+    def _clean_room_name_for_rename(self, room_name: str) -> str:
+        clean = room_name.strip()
+        if not clean:
+            raise RoomNameRequiredError()
+        if len(clean) > 60:
+            raise RoomNameTooLongError()
         return clean
 
     def _now(self) -> datetime:

@@ -43,7 +43,7 @@ class UsernameRequestBase(BaseModel):
 
 
 class CreateRoomRequest(UsernameRequestBase):
-    pass
+    room_name: str | None = Field(default=None, max_length=60)
 
 
 class JoinRoomRequest(UsernameRequestBase):
@@ -59,6 +59,7 @@ class ParticipantDTO(BaseModel):
 
 class CreateRoomResponse(BaseModel):
     room_code: str
+    room_name: str
     participant: ParticipantDTO
     participant_token: str
     host_token: str
@@ -66,6 +67,7 @@ class CreateRoomResponse(BaseModel):
 
 class JoinRoomResponse(BaseModel):
     room_code: str
+    room_name: str
     participant: ParticipantDTO
     participant_token: str
     room_status: RoomStatusLiteral
@@ -104,8 +106,19 @@ class DeleteRoomResponse(BaseModel):
     deleted: bool
 
 
+class RenameRoomRequest(BaseModel):
+    participant_id: UUID
+    host_token: str
+    room_name: str
+
+
+class RenameRoomResponse(BaseModel):
+    room_name: str
+
+
 class PublicRoomResponse(BaseModel):
     room_code: str
+    room_name: str
     status: RoomStatusLiteral
     reserved_participant_count: int
     capacity: Literal[2]
@@ -114,6 +127,7 @@ class PublicRoomResponse(BaseModel):
 
 class AvailableRoomResponse(BaseModel):
     room_code: str
+    room_name: str
     host_username: str
     reserved_participant_count: int
     capacity: Literal[2]

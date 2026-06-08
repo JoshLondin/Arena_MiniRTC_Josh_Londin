@@ -21,6 +21,8 @@ from app.api.schemas import (
     PublicRoomResponse,
     ReconnectRequest,
     ReconnectResponse,
+    RenameRoomRequest,
+    RenameRoomResponse,
 )
 from app.db.session import get_session
 from app.services.runtime import ice_service, room_service, signaling_service
@@ -34,7 +36,11 @@ async def create_room(
     request: CreateRoomRequest,
     session: SessionDep,
 ) -> CreateRoomResponse:
-    result = await room_service.create_room(session, username=request.username)
+    result = await room_service.create_room(
+        session,
+        username=request.username,
+        room_name=request.room_name,
+    )
     return CreateRoomResponse.model_validate(result, from_attributes=True)
 
 
@@ -93,6 +99,23 @@ async def delete_room(
         host_token=request.host_token,
     )
     return DeleteRoomResponse.model_validate(result, from_attributes=True)
+
+
+@router.patch("/{room_code}/name", response_model=RenameRoomResponse)
+async def rename_room(
+    room_code: str,
+    request: RenameRoomRequest,
+    session: SessionDep,
+) -> RenameRoomResponse:
+    result = await room_service.rename_room_by_host(
+        session,
+        room_code=room_code,
+        participant_id=request.participant_id,
+        host_token=request.host_token,
+        room_name=request.room_name,
+    )
+    await signaling_service.broadcast_room_state(room_code=room_code, state=result.room_state)
+    return RenameRoomResponse(room_name=result.room_name)
 
 
 @router.post("/{room_code}/leave", response_model=LeaveRoomResponse)

@@ -8,6 +8,8 @@ from app.core.errors import (
     CallAlreadyStartedError,
     InvalidHostTokenError,
     RoomFullError,
+    RoomNameRequiredError,
+    RoomNameTooLongError,
     RoomNotFoundError,
 )
 from app.db.base import Base
@@ -44,6 +46,7 @@ async def test_create_room_creates_host_participant(session_factory, room_servic
         )
 
     assert result.participant.username == "Alice"
+    assert result.room_name == result.room_code
     assert result.participant.is_room_host is True
     assert result.participant_token
     assert result.host_token
@@ -51,6 +54,40 @@ async def test_create_room_creates_host_participant(session_factory, room_servic
     assert state.call_status == CallStatus.IDLE.value
     assert state.reserved_participant_count == 1
     assert len(participants) == 1
+
+
+async def test_create_room_accepts_custom_room_name(session_factory, room_service):
+    async with session_factory() as session:
+        result = await room_service.create_room(
+            session,
+            username="Alice",
+            room_name="  Interview Prep  ",
+        )
+        state = await room_service.get_public_room_state(session, room_code=result.room_code)
+        payload = await room_service.get_room_state_payload(session, room_code=result.room_code)
+
+    assert result.room_name == "Interview Prep"
+    assert state.room_name == "Interview Prep"
+    assert payload.room_name == "Interview Prep"
+
+
+async def test_create_room_blank_name_falls_back_to_room_code(session_factory, room_service):
+    async with session_factory() as session:
+        result = await room_service.create_room(session, username="Alice", room_name="   ")
+        state = await room_service.get_public_room_state(session, room_code=result.room_code)
+
+    assert result.room_name == result.room_code
+    assert state.room_name == result.room_code
+
+
+async def test_create_room_rejects_too_long_room_name(session_factory, room_service):
+    async with session_factory() as session:
+        with pytest.raises(RoomNameTooLongError):
+            await room_service.create_room(
+                session,
+                username="Alice",
+                room_name="A" * 61,
+            )
 
 
 async def test_join_room_succeeds_for_second_participant(session_factory, room_service):
@@ -64,6 +101,7 @@ async def test_join_room_succeeds_for_second_participant(session_factory, room_s
         state = await room_service.get_public_room_state(session, room_code=created.room_code)
 
     assert joined.participant.username == "Bob"
+    assert joined.room_name == created.room_name
     assert joined.participant.is_room_host is False
     assert joined.room_status == RoomStatus.READY_FOR_CALL.value
     assert joined.reserved_participant_count == 2
@@ -88,6 +126,7 @@ async def test_available_rooms_include_room_with_one_active_participant(
 
     assert [room.room_code for room in rooms] == [created.room_code]
     assert rooms[0].host_username == "Alice"
+    assert rooms[0].room_name == created.room_name
     assert rooms[0].reserved_participant_count == 1
     assert rooms[0].capacity == 2
 
@@ -140,6 +179,99 @@ async def test_available_rooms_include_room_after_disconnected_slot_expires(
 
     assert [room.room_code for room in rooms] == [created.room_code]
     assert rooms[0].host_username == "Alice"
+    assert rooms[0].room_name == created.room_name
+
+
+async def test_host_can_rename_room_anytime(session_factory, room_service):
+    async with session_factory() as session:
+        created = await room_service.create_room(session, username="Alice")
+        result = await room_service.rename_room_by_host(
+            session,
+            room_code=created.room_code,
+            participant_id=created.participant.participant_id,
+            host_token=created.host_token,
+            room_name="  New Room Name  ",
+        )
+        state = await room_service.get_public_room_state(session, room_code=created.room_code)
+
+    assert result.room_name == "New Room Name"
+    assert result.room_state.room_name == "New Room Name"
+    assert state.room_name == "New Room Name"
+
+
+async def test_duplicate_room_names_are_allowed(session_factory, room_service):
+    async with session_factory() as session:
+        first = await room_service.create_room(
+            session,
+            username="Alice",
+            room_name="Shared Name",
+        )
+        second = await room_service.create_room(
+            session,
+            username="Carol",
+            room_name="Shared Name",
+        )
+        rooms = await room_service.list_available_rooms(session)
+
+    assert first.room_code != second.room_code
+    assert [room.room_name for room in rooms] == ["Shared Name", "Shared Name"]
+
+
+async def test_rename_room_rejects_blank_name(session_factory, room_service):
+    async with session_factory() as session:
+        created = await room_service.create_room(session, username="Alice")
+        with pytest.raises(RoomNameRequiredError):
+            await room_service.rename_room_by_host(
+                session,
+                room_code=created.room_code,
+                participant_id=created.participant.participant_id,
+                host_token=created.host_token,
+                room_name="   ",
+            )
+
+
+async def test_rename_room_rejects_too_long_name(session_factory, room_service):
+    async with session_factory() as session:
+        created = await room_service.create_room(session, username="Alice")
+        with pytest.raises(RoomNameTooLongError):
+            await room_service.rename_room_by_host(
+                session,
+                room_code=created.room_code,
+                participant_id=created.participant.participant_id,
+                host_token=created.host_token,
+                room_name="A" * 61,
+            )
+
+
+async def test_rename_room_rejects_non_host_participant(session_factory, room_service):
+    async with session_factory() as session:
+        created = await room_service.create_room(session, username="Alice")
+        joined = await room_service.join_room(
+            session,
+            room_code=created.room_code,
+            username="Bob",
+        )
+        with pytest.raises(InvalidHostTokenError):
+            await room_service.rename_room_by_host(
+                session,
+                room_code=created.room_code,
+                participant_id=joined.participant.participant_id,
+                host_token=created.host_token,
+                room_name="Bob's Room",
+            )
+
+
+async def test_rename_room_rejects_invalid_token(session_factory, room_service):
+    async with session_factory() as session:
+        created = await room_service.create_room(session, username="Alice")
+        with pytest.raises(InvalidHostTokenError):
+            await room_service.rename_room_by_host(
+                session,
+                room_code=created.room_code,
+                participant_id=created.participant.participant_id,
+                host_token="wrong",
+                room_name="New Name",
+            )
 
 
 async def test_host_delete_deletes_room(session_factory, room_service):

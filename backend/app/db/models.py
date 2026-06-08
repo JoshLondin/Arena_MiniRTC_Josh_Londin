@@ -42,6 +42,7 @@ class Room(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
     room_code: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(Text, nullable=False, default=RoomStatus.EMPTY.value)
     call_status: Mapped[str] = mapped_column(Text, nullable=False, default=CallStatus.IDLE.value)
     call_host_participant_id: Mapped[uuid.UUID | None] = mapped_column(

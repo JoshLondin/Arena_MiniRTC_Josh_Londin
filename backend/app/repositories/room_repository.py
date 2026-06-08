@@ -15,9 +15,15 @@ class RoomRepository:
         session: AsyncSession,
         *,
         room_code: str,
+        name: str,
         host_token_hash: str,
     ) -> Room:
-        room = Room(room_code=room_code, host_token_hash=host_token_hash, status="EMPTY")
+        room = Room(
+            room_code=room_code,
+            name=name,
+            host_token_hash=host_token_hash,
+            status="EMPTY",
+        )
         session.add(room)
         await session.flush()
         return room
@@ -157,6 +163,15 @@ class RoomRepository:
         if call_status is not None:
             values["call_status"] = call_status
         await session.execute(update(Room).where(Room.id == room_id).values(**values))
+
+    async def update_room_name(
+        self,
+        session: AsyncSession,
+        *,
+        room_id: UUID,
+        name: str,
+    ) -> None:
+        await session.execute(update(Room).where(Room.id == room_id).values(name=name))
 
     async def update_participant_last_seen(
         self,

@@ -338,6 +338,7 @@ class SignalingService:
 
     def _room_state_payload(self, state: RoomStatePayload) -> dict[str, Any]:
         return {
+            "room_name": state.room_name,
             "room_status": state.room_status,
             "reserved_participant_count": state.reserved_participant_count,
             "capacity": state.capacity,
